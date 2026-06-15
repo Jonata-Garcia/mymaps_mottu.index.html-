@@ -459,102 +459,43 @@
     <p class="footer-text">Mottu RecOps · <span>MyMaps Automation</span> · Powered by N8N</p>
   </footer>
 
-  <script>
-    // CONFIGURE AQUI: URL do seu webhook N8N
-    const WEBHOOK_URL = 'https://webhook-n8n-int.mottu.io/webhook/solicitar-mymaps';
+<script>
+  const WEBHOOK_BASE = 'https://webhook-n8n-int.mottu.io/webhook/solicitar-mymaps';
 
-    async function submitForm(e) {
-      e.preventDefault();
-
-      const placa = document.getElementById('placa').value.trim().toUpperCase();
-      const btn   = document.getElementById('submitBtn');
-      const spinner = document.getElementById('spinner');
-      const btnText = document.getElementById('btnText');
-      const btnArrow = document.getElementById('btnArrow');
-      const errorMsg = document.getElementById('errorMsg');
-
-      if (!placa || placa.length < 6) {
-        showError('Informe uma placa válida (ex: UAX-2F98)');
-        return;
-      }
-
-      // Loading state
-      btn.disabled = true;
-      spinner.style.display = 'block';
-      btnText.textContent = 'Gerando mapa...';
-      btnArrow.style.display = 'none';
-      errorMsg.style.display = 'none';
-
-      try {
-        const response = await fetch(WEBHOOK_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ Placa: placa })
-        });
-
-        if (!response.ok) throw new Error('Erro na requisição: ' + response.status);
-
-        const data = await response.json();
-        showResult(data, placa);
-
-      } catch (err) {
-        showError('Erro ao conectar com o servidor. Tente novamente.');
-        btn.disabled = false;
-        spinner.style.display = 'none';
-        btnText.textContent = 'Gerar mapa';
-        btnArrow.style.display = 'inline';
-      }
+  function submitForm(e) {
+    e.preventDefault();
+    const placa = document.getElementById('placa').value.trim().toUpperCase();
+    
+    if (!placa || placa.length < 6) {
+      showError('Informe uma placa válida (ex: UAX-2F98)');
+      return;
     }
 
-    function showResult(data, placa) {
-      const formCard   = document.getElementById('formCard');
-      const resultCard = document.getElementById('resultCard');
-      const jaExistia  = data.jaExistia || false;
-      const linkKML    = data.linkKML || data.linkDrive || '#';
-      const total      = data.totalPontos || 0;
+    const btn = document.getElementById('submitBtn');
+    const spinner = document.getElementById('spinner');
+    const btnText = document.getElementById('btnText');
+    const btnArrow = document.getElementById('btnArrow');
 
-      document.getElementById('resultIcon').textContent   = jaExistia ? '♻️' : '✅';
-      document.getElementById('resultTitle').textContent  = jaExistia ? 'Mapa já existente' : 'Mapa gerado!';
-      document.getElementById('resultPlaca').textContent  = `Placa: ${placa}`;
+    btn.disabled = true;
+    spinner.style.display = 'block';
+    btnText.textContent = 'Gerando mapa...';
+    btnArrow.style.display = 'none';
 
-      if (!jaExistia && total > 0) {
-        const pts = document.getElementById('resultPoints');
-        pts.textContent = `📍 ${total} pontos mapeados`;
-        pts.style.display = 'inline-flex';
-      }
+    window.location.href = `${WEBHOOK_BASE}?Placa=${encodeURIComponent(placa)}`;
+  }
 
-      document.getElementById('kmlBtn').href        = linkKML;
-      document.getElementById('kmlBtn').textContent = `📁 Abrir KML — ${placa}`;
+  function showError(msg) {
+    const el = document.getElementById('errorMsg');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
 
-      resultCard.className = `result-card ${jaExistia ? 'existing' : 'success'}`;
-
-      formCard.style.display   = 'none';
-      resultCard.style.display = 'block';
-    }
-
-    function resetForm() {
-      document.getElementById('formCard').style.display   = 'block';
-      document.getElementById('resultCard').style.display = 'none';
-      document.getElementById('placa').value = '';
-      document.getElementById('submitBtn').disabled = false;
-      document.getElementById('spinner').style.display = 'none';
-      document.getElementById('btnText').textContent = 'Gerar mapa';
-      document.getElementById('btnArrow').style.display = 'inline';
-    }
-
-    function showError(msg) {
-      const el = document.getElementById('errorMsg');
-      el.textContent = msg;
-      el.style.display = 'block';
-    }
-
-    // Format placa input
-    document.getElementById('placa').addEventListener('input', function(e) {
-      let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-      if (val.length > 3) val = val.slice(0,3) + '-' + val.slice(3);
-      e.target.value = val;
-    });
-  </script>
+  document.getElementById('placa').addEventListener('input', function(e) {
+    let val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (val.length > 3) val = val.slice(0,3) + '-' + val.slice(3);
+    e.target.value = val;
+  });
+</script>
 
 </body>
 </html>
