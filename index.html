@@ -317,7 +317,7 @@
     if (!validatePlate(true)) return;
     const kmlUrl = WEBHOOK_BASE + '?Placa=' + encodeURIComponent(placa);
     showLoading(placa);
-    scheduleRedirect(kmlUrl, 3500);
+    scheduleRedirect(kmlUrl, 3000);
   });
 
   function startMapAnimation() {
