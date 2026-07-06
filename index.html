@@ -52,25 +52,11 @@
       display: flex; align-items: center; gap: 16px;
       border-bottom: 1px solid var(--color-outline-variant);
     }
-    main {
-      flex: 1; display: flex; align-items: center; justify-content: center;
-      padding: 48px 20px;
-    }
+    main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 20px; }
     .container { width: 100%; max-width: 460px; }
-    footer {
-      padding: 18px 32px;
-      border-top: 1px solid var(--color-outline-variant);
-      text-align: center;
-      font-size: 11px; color: var(--color-on-surface-var); opacity: 0.5;
-    }
+    footer { padding: 18px 32px; border-top: 1px solid var(--color-outline-variant); text-align: center; font-size: 11px; color: var(--color-on-surface-var); opacity: 0.5; }
     footer span { color: var(--color-primary); opacity: 1; }
-    .card {
-      background: var(--color-surface);
-      border: 1px solid var(--color-outline-variant);
-      border-radius: 16px; overflow: hidden;
-      position: relative;
-      animation: fadeUp 0.5s ease both;
-    }
+    .card { background: var(--color-surface); border: 1px solid var(--color-outline-variant); border-radius: 16px; overflow: hidden; position: relative; animation: fadeUp 0.5s ease both; }
     .card-top-bar { height: 3px; }
     .card-hero { padding: 36px 40px 28px; text-align: center; border-bottom: 1px solid var(--color-outline-variant); }
     .icon-wrap { position: relative; width: 80px; height: 80px; margin: 0 auto 24px; }
@@ -565,7 +551,7 @@
 
   function tick() { update(); draw(); animId = requestAnimationFrame(tick); }
 
-  function onCanvasClick() {
+  function triggerWipeout() {
     if (moto.state !== 'riding') return;
     moto.state = 'wipeout';
     moto.riderX = moto.x;
@@ -574,6 +560,12 @@
     moto.riderVY = -(7 + Math.random()*3);
     if (window._extendRedirect) window._extendRedirect();
   }
+
+  function onCanvasClick() { triggerWipeout(); }
+
+  document.addEventListener('keydown', function(e) {
+    if ((e.key === 'm' || e.key === 'M') && animId) triggerWipeout();
+  });
 
   window._startMotoAnim = function() {
     if (!canvas) init();
