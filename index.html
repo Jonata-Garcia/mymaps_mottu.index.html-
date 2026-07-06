@@ -23,35 +23,14 @@
       --font-plain: 'Poppins', sans-serif;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: var(--font-plain);
-      background: var(--color-background);
-      color: var(--color-on-surface);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      -webkit-font-smoothing: antialiased;
-    }
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(16px); }
-      to   { opacity: 1; transform: translateY(0); }
-    }
-    @keyframes ping-trail {
-      0%   { transform: translate(-50%,-50%) scale(0); opacity: 0.7; }
-      100% { transform: translate(-50%,-50%) scale(3); opacity: 0; }
-    }
-    @keyframes draw-line {
-      from { stroke-dashoffset: 120; }
-      to   { stroke-dashoffset: 0; }
-    }
+    body { font-family: var(--font-plain); background: var(--color-background); color: var(--color-on-surface); min-height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes ping-trail { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.7; } 100% { transform: translate(-50%,-50%) scale(3); opacity: 0; } }
+    @keyframes draw-line { from { stroke-dashoffset: 120; } to { stroke-dashoffset: 0; } }
     @keyframes successPulse  { 0%{transform:scale(0.8);opacity:.6} 100%{transform:scale(1.7);opacity:0} }
     @keyframes existingPulse { 0%{transform:scale(0.8);opacity:.6} 100%{transform:scale(1.7);opacity:0} }
     @keyframes errorPulse    { 0%{transform:scale(0.8);opacity:.6} 100%{transform:scale(1.7);opacity:0} }
-    header {
-      padding: 16px 32px;
-      display: flex; align-items: center; gap: 16px;
-      border-bottom: 1px solid var(--color-outline-variant);
-    }
+    header { padding: 16px 32px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--color-outline-variant); }
     main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 20px; }
     .container { width: 100%; max-width: 460px; }
     footer { padding: 18px 32px; border-top: 1px solid var(--color-outline-variant); text-align: center; font-size: 11px; color: var(--color-on-surface-var); opacity: 0.5; }
@@ -61,9 +40,9 @@
     .card-hero { padding: 36px 40px 28px; text-align: center; border-bottom: 1px solid var(--color-outline-variant); }
     .icon-wrap { position: relative; width: 80px; height: 80px; margin: 0 auto 24px; }
     .icon-ring { position: absolute; inset: -8px; border-radius: 50%; border: 1.5px solid; opacity: 0; }
-    .icon-ring.green  { border-color: var(--color-primary); animation: successPulse  2s ease-out infinite; }
-    .icon-ring.amber  { border-color: var(--color-amber);   animation: existingPulse 2s ease-out infinite; }
-    .icon-ring.red    { border-color: var(--color-error);   animation: errorPulse    2s ease-out infinite; }
+    .icon-ring.green { border-color: var(--color-primary); animation: successPulse  2s ease-out infinite; }
+    .icon-ring.amber { border-color: var(--color-amber);   animation: existingPulse 2s ease-out infinite; }
+    .icon-ring.red   { border-color: var(--color-error);   animation: errorPulse    2s ease-out infinite; }
     .icon-circle { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid; }
     .icon-circle.green { background: rgba(0,177,49,0.1);    border-color: var(--color-primary); }
     .icon-circle.amber { background: rgba(217,119,6,0.1);   border-color: var(--color-amber); }
@@ -317,7 +296,7 @@
     if (!validatePlate(true)) return;
     const kmlUrl = WEBHOOK_BASE + '?Placa=' + encodeURIComponent(placa);
     showLoading(placa);
-    scheduleRedirect(kmlUrl, 3000);
+    scheduleRedirect(kmlUrl, 2500);
   });
 
   function startMapAnimation() {
@@ -470,15 +449,10 @@
     resize();
     moto = {
       x: W/2, y: H - 28,
-      vx: 2.2, vy: 0,
-      dir: 1,
+      vx: 2.2, vy: 0, dir: 1,
       state: 'riding',
-      riderX: 0, riderY: 0,
-      riderVX: 0, riderVY: 0,
-      riderDir: 1,
-      stateTimer: 0,
-      changeTimer: 80 + Math.random()*100,
-      hintAlpha: 1.0,
+      riderX: 0, riderY: 0, riderVX: 0, riderVY: 0, riderDir: 1,
+      stateTimer: 0, changeTimer: 80 + Math.random()*100, hintAlpha: 1.0,
     };
   }
 
@@ -498,12 +472,9 @@
       }
     } else if (moto.state === 'wipeout') {
       moto.x += moto.vx*0.5; moto.vx *= 0.94;
-      moto.riderX += moto.riderVX;
-      moto.riderY += moto.riderVY;
-      moto.riderVY += 0.5;
+      moto.riderX += moto.riderVX; moto.riderY += moto.riderVY; moto.riderVY += 0.5;
       if (moto.riderY >= H - 58) {
-        moto.riderY = H - 58;
-        moto.riderVY *= -0.15; moto.riderVX *= 0.2;
+        moto.riderY = H - 58; moto.riderVY *= -0.15; moto.riderVX *= 0.2;
         moto.state = 'fallen'; moto.stateTimer = 150;
       }
     } else if (moto.state === 'fallen') {
@@ -525,27 +496,15 @@
   function draw() {
     ctx.clearRect(0, 0, W, H);
     var flip = moto.dir === -1;
-    if (moto.state === 'riding') {
-      drawSprite('riding', moto.x, moto.y, flip);
-    } else if (moto.state === 'wipeout') {
-      drawSprite('motoOnly', moto.x, moto.y, flip);
-      drawSprite('flying', moto.riderX, moto.riderY, flip);
-    } else if (moto.state === 'fallen') {
-      drawSprite('motoOnly', moto.x, moto.y, flip);
-      drawSprite('fallen', moto.riderX, moto.riderY, false);
-    } else if (moto.state === 'recovering') {
-      drawSprite('motoOnly', moto.x, moto.y, flip);
-      drawSprite('running', moto.riderX, moto.riderY, moto.riderDir === -1);
-    }
+    if (moto.state === 'riding')     { drawSprite('riding',   moto.x,   moto.y,   flip); }
+    else if (moto.state === 'wipeout')  { drawSprite('motoOnly', moto.x,   moto.y,   flip); drawSprite('flying',  moto.riderX, moto.riderY, flip); }
+    else if (moto.state === 'fallen')   { drawSprite('motoOnly', moto.x,   moto.y,   flip); drawSprite('fallen',  moto.riderX, moto.riderY, false); }
+    else if (moto.state === 'recovering') { drawSprite('motoOnly', moto.x, moto.y, flip); drawSprite('running', moto.riderX, moto.riderY, moto.riderDir === -1); }
     if (moto.hintAlpha > 0) {
       moto.hintAlpha -= 0.003;
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, moto.hintAlpha);
-      ctx.fillStyle = '#969e99';
-      ctx.font = '10px Poppins,sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('Clique no piloto!', W/2, H - 6);
-      ctx.restore();
+      ctx.save(); ctx.globalAlpha = Math.max(0, moto.hintAlpha);
+      ctx.fillStyle = '#969e99'; ctx.font = '10px Poppins,sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('Clique no piloto!', W/2, H - 6); ctx.restore();
     }
   }
 
@@ -554,8 +513,7 @@
   function triggerWipeout() {
     if (moto.state !== 'riding') return;
     moto.state = 'wipeout';
-    moto.riderX = moto.x;
-    moto.riderY = moto.y - 60;
+    moto.riderX = moto.x; moto.riderY = moto.y - 60;
     moto.riderVX = moto.dir * (4 + Math.random()*3);
     moto.riderVY = -(7 + Math.random()*3);
     if (window._extendRedirect) window._extendRedirect();
@@ -568,8 +526,7 @@
   });
 
   window._startMotoAnim = function() {
-    if (!canvas) init();
-    reset();
+    if (!canvas) init(); reset();
     if (animId) cancelAnimationFrame(animId);
     if (Object.keys(sprites).length > 0) { tick(); }
     else { loadSprites(function() { tick(); }); }
@@ -580,7 +537,7 @@
   };
 
   init();
-  loadSprites(function() { /* preloaded */ });
+  loadSprites(function() {});
 })();
 </script>
 </body>
