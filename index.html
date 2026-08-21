@@ -84,7 +84,6 @@
   </style>
 </head>
 <body>
-
 <header>
   <svg width="148" height="40" viewBox="0 0 148 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Mottu RecOps">
     <path d="M4 4 L36 4 L36 26 Q20 36 20 36 Q20 36 4 26 Z" fill="#0e100d" stroke="#424943" stroke-width="1"/>
@@ -105,10 +104,8 @@
     <span style="font-family:'Barlow',sans-serif; font-size:11px; font-weight:700; font-style:italic; color:#00b131; letter-spacing:1px; text-transform:uppercase;">MyMaps</span>
   </div>
 </header>
-
 <main>
   <div class="container">
-
     <!-- FORM -->
     <div class="card" id="formCard">
       <div class="card-top-bar" style="background:var(--color-primary);"></div>
@@ -139,7 +136,6 @@
         </form>
       </div>
     </div>
-
     <!-- LOADING -->
     <div class="card hidden" id="loadingCard">
       <canvas id="motoCanvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:0;border-radius:16px;cursor:crosshair;" title="Clique no piloto!"></canvas>
@@ -168,7 +164,6 @@
         <p style="font-size:13px; color:var(--color-on-surface-var);" id="loadingPlaca"></p>
       </div>
     </div>
-
     <!-- SUCCESS -->
     <div class="card hidden" id="resultCard">
       <div class="card-top-bar" style="background:var(--color-primary);"></div>
@@ -190,7 +185,6 @@
         <button onclick="resetForm()" class="btn-secondary"><span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>Solicitar outro mapa</button>
       </div>
     </div>
-
     <!-- EXISTING -->
     <div class="card hidden" id="existingCard">
       <div class="card-top-bar" style="background:var(--color-amber);"></div>
@@ -212,7 +206,6 @@
         <button onclick="resetForm()" class="btn-secondary"><span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>Solicitar outro mapa</button>
       </div>
     </div>
-
     <!-- ERROR -->
     <div class="card hidden" id="errorCard">
       <div class="card-top-bar" style="background:var(--color-error);"></div>
@@ -234,12 +227,9 @@
         <button onclick="resetForm()" class="btn-secondary"><span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>Solicitar outro mapa</button>
       </div>
     </div>
-
   </div>
 </main>
-
 <footer>Mottu RecOps · <span>MyMaps Automation</span> · Powered by N8N</footer>
-
 <script>
 (function () {
   const WEBHOOK_BASE = 'https://webhook-n8n-int.mottu.io/webhook/solicitar-mymaps';
@@ -249,14 +239,12 @@
     {x:20,y:75},{x:65,y:80},{x:88,y:68},{x:10,y:30},{x:45,y:15},
   ];
   let dotTimers = [], scanAnim = null;
-
   document.getElementById('placa').addEventListener('input', function (e) {
     let v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (v.length > 3) v = v.slice(0, 3) + '-' + v.slice(3);
     e.target.value = v;
     validatePlate(false);
   });
-
   function validatePlate(showMsg) {
     const input = document.getElementById('placa');
     const raw   = input.value.replace('-', '');
@@ -276,20 +264,16 @@
     err.style.display = 'none';
     return true;
   }
-
   var _redirectTimer = null;
   var _pendingUrl = '';
-
   function scheduleRedirect(url, delay) {
     if (_redirectTimer) clearTimeout(_redirectTimer);
     _pendingUrl = url;
     _redirectTimer = setTimeout(function() { window.location.href = url; }, delay);
   }
-
   window._extendRedirect = function() {
     // Desabilitado — não interfere no redirect para não atrasar o fluxo N8N
   };
-
   document.getElementById('placaForm').addEventListener('submit', function (e) {
     e.preventDefault();
     const placa = document.getElementById('placa').value.trim().toUpperCase();
@@ -298,7 +282,6 @@
     showLoading(placa);
     scheduleRedirect(kmlUrl, 100);
   });
-
   function startMapAnimation() {
     const container = document.getElementById('mapDots');
     container.innerHTML = '';
@@ -328,25 +311,21 @@
       dotTimers.push(t);
     });
   }
-
   function stopMapAnimation() {
     if (scanAnim) cancelAnimationFrame(scanAnim);
     dotTimers.forEach(clearTimeout); dotTimers = [];
   }
-
   function hideAll() {
     ['formCard','loadingCard','resultCard','existingCard','errorCard'].forEach(function (id) {
       document.getElementById(id).classList.add('hidden');
     });
   }
-
   function showCard(id) {
     const el = document.getElementById(id);
     el.classList.remove('hidden');
     el.style.animation = 'none'; void el.offsetWidth;
     el.style.animation = 'fadeUp 0.5s ease both';
   }
-
   function showLoading(placa) {
     hideAll();
     document.getElementById('loadingPlaca').textContent = 'Placa: ' + placa;
@@ -354,7 +333,6 @@
     startMapAnimation();
     if (window._startMotoAnim) window._startMotoAnim();
   }
-
   window.resetForm = function () {
     stopMapAnimation();
     if (window._stopMotoAnim) window._stopMotoAnim();
@@ -366,17 +344,31 @@
     document.getElementById('fieldIcon').style.color = 'var(--color-on-surface-var)';
     document.getElementById('fieldError').style.display = 'none';
   };
-
   window.addEventListener('pageshow', function () { resetForm(); });
-})();
 
+  // ── Auto-preenchimento via ?placa= (adicionado em 2026-08-21, a pedido do Jonata) ──────────
+  // O botão "Criar MyMaps" do dashboard Carteira RecOps abre esta página como
+  // ".../?placa=ABC-1234". Este listener roda DEPOIS do listener de pageshow acima (mesma ordem
+  // de registro = mesma ordem de execução), ou seja, depois que resetForm() já limpou o campo —
+  // por isso ele não zera o valor que acabamos de preencher. Aceita tanto "placa" (é o que o
+  // dashboard envia) quanto "Placa" (maiúsculo, só por robustez, já que o webhook do N8N usa
+  // "Placa" em outro contexto neste mesmo arquivo).
+  window.addEventListener('pageshow', function () {
+    const params = new URLSearchParams(window.location.search);
+    let placa = params.get('placa') || params.get('Placa');
+    if (!placa) return;
+    placa = placa.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (placa.length > 3) placa = placa.slice(0, 3) + '-' + placa.slice(3);
+    document.getElementById('placa').value = placa;
+    validatePlate(false);
+  });
+})();
 // ── Moto Easter Egg Animation (Sprite-based) ──────────────────
 (function() {
   var canvas, ctx, W, H, animId = null;
   var moto = {};
   var sprites = {};
   var SPRITE_SIZE = 100;
-
   var SPRITE_FILES = {
     riding:   'sprites/moto-riding.png',
     motoOnly: 'sprites/moto-alone.png',
@@ -384,7 +376,6 @@
     fallen:   'sprites/rider-fallen.png',
     running:  'sprites/rider-running.png'
   };
-
   var ANCHORS = {
     riding:   [0.50, 0.82],
     motoOnly: [0.50, 0.80],
@@ -392,7 +383,6 @@
     fallen:   [0.52, 0.70],
     running:  [0.47, 0.82]
   };
-
   function stripBlack(img) {
     var sz = SPRITE_SIZE;
     var c = document.createElement('canvas');
@@ -408,7 +398,6 @@
     cx.putImageData(d, 0, 0);
     return c;
   }
-
   function loadSprites(onDone) {
     var keys = Object.keys(SPRITE_FILES);
     var remaining = keys.length;
@@ -419,7 +408,6 @@
       img.src = SPRITE_FILES[k];
     });
   }
-
   function drawSprite(key, wx, wy, flip) {
     var s = sprites[key]; if (!s) return;
     var an = ANCHORS[key]; var sz = SPRITE_SIZE;
@@ -429,7 +417,6 @@
     ctx.drawImage(s, -an[0]*sz, -an[1]*sz, sz, sz);
     ctx.restore();
   }
-
   function init() {
     canvas = document.getElementById('motoCanvas');
     if (!canvas) return;
@@ -437,14 +424,12 @@
     resize();
     canvas.addEventListener('click', onCanvasClick);
   }
-
   function resize() {
     W = canvas.offsetWidth || 460;
     H = canvas.offsetHeight || 320;
     canvas.width = W;
     canvas.height = H;
   }
-
   function reset() {
     resize();
     moto = {
@@ -454,7 +439,6 @@
       stateTimer: 0, changeTimer: 80 + Math.random()*100, hintAlpha: 1.0,
     };
   }
-
   function update() {
     if (moto.state === 'riding') {
       moto.x += moto.vx; moto.y += moto.vy;
@@ -491,7 +475,6 @@
       }
     }
   }
-
   function draw() {
     ctx.clearRect(0, 0, W, H);
     var flip = moto.dir === -1;
@@ -506,9 +489,7 @@
       ctx.fillText('Clique no piloto!', W/2, H - 6); ctx.restore();
     }
   }
-
   function tick() { update(); draw(); animId = requestAnimationFrame(tick); }
-
   function triggerWipeout() {
     if (moto.state !== 'riding') return;
     moto.state = 'wipeout';
@@ -516,13 +497,10 @@
     moto.riderVX = moto.dir * (4 + Math.random()*3);
     moto.riderVY = -(7 + Math.random()*3);
   }
-
   function onCanvasClick() { triggerWipeout(); }
-
   document.addEventListener('keydown', function(e) {
     if ((e.key === 'm' || e.key === 'M') && animId) triggerWipeout();
   });
-
   window._startMotoAnim = function() {
     if (!canvas) init(); reset();
     if (animId) cancelAnimationFrame(animId);
@@ -533,7 +511,6 @@
     if (animId) { cancelAnimationFrame(animId); animId = null; }
     if (ctx) ctx.clearRect(0, 0, W||460, H||320);
   };
-
   init();
   loadSprites(function() {});
 })();
