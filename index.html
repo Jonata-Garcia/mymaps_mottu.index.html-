@@ -1,1405 +1,521 @@
-{
-  "nodes": [
-    {
-      "parameters": {
-        "rule": {
-          "interval": [
-            {
-              "field": "weeks",
-              "triggerAtDay": [
-                1,
-                2,
-                3,
-                4,
-                5,
-                6,
-                0
-              ]
-            }
-          ]
-        }
-      },
-      "id": "b86731b0-664a-4f99-9c38-b77589189d10",
-      "name": "Schedule - Limpeza Semanal",
-      "type": "n8n-nodes-base.scheduleTrigger",
-      "typeVersion": 1.2,
-      "position": [
-        0,
-        90.0
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const params = $json.query || {};\nconst body   = $json.body  || {};\nconst bruta  = (params.Placa || body.Placa || body.placa || '').toString().trim().toUpperCase().replace(/[^A-Z0-9]/g, '');\n\nif (/^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$/.test(bruta)) {\n  return { placa: bruta.slice(0, 3) + '-' + bruta.slice(3) };\n}\n\nif (/^[0-9][A-Z0-9]{5,6}$/.test(bruta)) {\n  return { placa: bruta };\n}\n\nthrow new Error('Placa inválida');"
-      },
-      "id": "22fe3912-3791-4bc6-9904-4b56ef9d8b52",
-      "name": "Code - Extrai Placa",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        220,
-        540
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const placa = $('Code - Extrai Placa').first().json.placa;\nconst prefixo = `mymaps_${placa}_`;\n\nconst existente = $('Google Drive - Busca KML Existente').all()\n  .map(i => i.json)\n  .filter(f => f && f.id && String(f.name || '').startsWith(prefixo))\n  .sort((a, b) => String(b.name).localeCompare(String(a.name)))[0];\n\nif (existente) {\n  return { placa, jaExiste: true, linkKML: `https://drive.google.com/uc?export=download&id=${existente.id}` };\n}\n\nreturn { placa, jaExiste: false };"
-      },
-      "id": "9747b173-6ef9-40c1-b5b3-dacb23708867",
-      "name": "Code - Verifica se Já Existe",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        660,
-        540
-      ]
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 1
-          },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.jaExiste }}",
-              "rightValue": true,
-              "operator": {
-                "type": "boolean",
-                "operation": "equals"
-              },
-              "id": "8d539d92-22e2-48e7-8a78-1a92ddeceeb6"
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "id": "ad55cc0d-3177-4032-8cce-420e48b73023",
-      "name": "IF - Já Existe?",
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2,
-      "position": [
-        880,
-        540
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const dados = $json;\nreturn {\n  placa:       dados.placa,\n  linkKML:     dados.linkKML,\n  totalPontos: 0,\n  jaExistia:   true\n};"
-      },
-      "id": "107090b8-0ade-49be-8c18-1ca69e9dbdd5",
-      "name": "Code - Retorna Link Existente",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1210.0,
-        540
-      ]
-    },
-    {
-      "parameters": {
-        "projectId": "dm-mottu-aluguel",
-        "sqlQuery": "WITH\nusuarios_detalhes AS (\n  SELECT * FROM `dm-mottu-aluguel.grw_usuarios.usuarios_detalhes`\n  QUALIFY ROW_NUMBER() OVER(PARTITION BY usuarioId ORDER BY endereco_aprovado DESC) = 1\n),\nenderecos_virtuais AS (\n  SELECT * FROM `dm-mottu-aluguel.flt_telemetria.telemetria_endereco_virtual_v3`\n  QUALIFY ROW_NUMBER() OVER(PARTITION BY usuarioId ORDER BY qtd_periodos_cluster DESC) = 1\n),\ndevice_enderecos AS (\n  SELECT usuarioid, latitude, longitude, data_ultima_conexao,\n    ROW_NUMBER() OVER(PARTITION BY usuarioid ORDER BY total_conexoes_cluster DESC) AS rn\n  FROM `dm-mottu-aluguel.flt_telemetria.device_endereco_virtual`\n),\nvisitas AS (\n  SELECT usuario_id, MAX(endPing) AS endPing, MAX(endCadastro) AS endCadastro, MAX(endVirt) AS endVirt\n  FROM `dm-mottu-aluguel.flt_servicos_rua.apropriacao_visitas`\n  GROUP BY usuario_id\n),\nbase AS (\n  SELECT fa.placa, fa.usuarioId,\n    CAST(fa.latitude AS FLOAT64) AS ping_lat, CAST(fa.longitude AS FLOAT64) AS ping_long,\n    fa.ultimoPingData AS ping_data,\n    CAST(ud.residenciaLatitude AS FLOAT64) AS cadastro_lat, CAST(ud.residenciaLongitude AS FLOAT64) AS cadastro_long,\n    CAST(ev.lat_mediana_media AS FLOAT64) AS pernoite_lat, CAST(ev.long_mediana_media AS FLOAT64) AS pernoite_long,\n    ev.data_ultimo_pernoite AS pernoite_data,\n    CAST(vr.endPing AS STRING) AS id_visita_ping,\n    CAST(vr.endCadastro AS STRING) AS id_visita_cadastro,\n    CAST(vr.endVirt AS STRING) AS id_visita_virt\n  FROM `dm-mottu-aluguel.exp_frota.frota_atual` fa\n  LEFT JOIN usuarios_detalhes ud ON ud.usuarioId = fa.usuarioId\n  LEFT JOIN enderecos_virtuais ev ON ev.usuarioId = fa.usuarioId\n  LEFT JOIN visitas vr ON vr.usuario_id = fa.usuarioId\n  WHERE fa.placa = '{{ $(\"Code - Extrai Placa\").first().json.placa }}'\n),\nresultado AS (\n  SELECT 1 AS ordem, CAST(NULL AS TIMESTAMP) AS data_ref, 'Endereço Cadastro' AS endereco, b.cadastro_lat AS latitude, b.cadastro_long AS longitude FROM base b UNION ALL\n  SELECT 2, TIMESTAMP(b.pernoite_data), CONCAT('Endereço Pernoite - ', FORMAT_TIMESTAMP('%d/%m/%Y', b.pernoite_data)), b.pernoite_lat, b.pernoite_long FROM base b UNION ALL\n  SELECT 3, TIMESTAMP(d.data_ultima_conexao), CONCAT('Pernoite Celular - ', FORMAT_DATETIME('%d/%m/%Y', d.data_ultima_conexao)), d.latitude, d.longitude FROM base b JOIN device_enderecos d ON d.usuarioid = b.usuarioId UNION ALL\n  SELECT 4, TIMESTAMP(b.ping_data), CONCAT('Ultimo Ping Moto - ', FORMAT_TIMESTAMP('%d/%m/%Y', b.ping_data)), b.ping_lat, b.ping_long FROM base b UNION ALL\n  SELECT 5, CAST(NULL AS TIMESTAMP), 'Visita Cadastro', c2.latitude, c2.longitude FROM base b LEFT JOIN `dm-mottu-aluguel.flt_servicos_rua.customer_address_current` c2 ON c2.id_endereco = b.id_visita_cadastro UNION ALL\n  SELECT 6, CAST(NULL AS TIMESTAMP), 'Visita Ping', c1.latitude, c1.longitude FROM base b LEFT JOIN `dm-mottu-aluguel.flt_servicos_rua.customer_address_current` c1 ON c1.id_endereco = b.id_visita_ping UNION ALL\n  SELECT 7, CAST(NULL AS TIMESTAMP), 'Visita Pernoite', c3.latitude, c3.longitude FROM base b LEFT JOIN `dm-mottu-aluguel.flt_servicos_rua.customer_address_current` c3 ON c3.id_endereco = b.id_visita_virt\n)\nSELECT\n  endereco,\n  latitude,\n  longitude,\n  CONCAT(\n    '🗺️ https://www.google.com/maps?q=', CAST(latitude AS STRING), ',', CAST(longitude AS STRING)\n  ) AS descricao\nFROM resultado\nWHERE latitude IS NOT NULL AND longitude IS NOT NULL\nORDER BY ordem, data_ref DESC",
-        "options": {}
-      },
-      "id": "709bc394-5eae-441f-ac04-71de9216487a",
-      "name": "BigQuery - Endereços Principais",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2,
-      "position": [
-        1210.0,
-        1080
-      ],
-      "credentials": {
-        "googleBigQueryOAuth2Api": {
-          "id": "fEvX6CLoEoQBCMyd",
-          "name": "Google BigQuery - leonardo.fava@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "numberInputs": 8
-      },
-      "id": "4393f807-ae05-47d4-9251-b268bab9471d",
-      "name": "Merge - Sincroniza BQs",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        2860,
-        1620
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const itensDe = (no) => {\n  try { return $(no).all().filter(i => i && i.json); } catch (e) { return []; }\n};\n\nconst telemetriaItems      = itensDe('BigQuery - Telemetria App');\nconst enderecosItems       = itensDe('BigQuery - Endereços Principais');\nconst enderecosFracosItems = itensDe('BigQuery - Endereços Fracos');\nconst enderecosLemitItems  = itensDe('BigQuery - Endereços Lemit');\nconst recusasItems         = itensDe('BigQuery -Recusas');\nconst facematchItems       = itensDe('Code - FaceMatch');\nconst multasItems          = itensDe('Code - BQ + Geocod');\nconst cbdItems             = itensDe('Code - Anexa Foto CBD');\nconst placa = $('Code - Extrai Placa').first().json.placa;\n\nconst ICONS_BASE = 'https://jonata-garcia.github.io/mymaps_mottu.index.html-/icons';\n\nconst escapeXml = (str) => String(str)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;')\n  .replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\n\nconst mapPontos = (items, rawDesc = false) => items\n  .filter(i => i.json.latitude && i.json.longitude)\n  .map(i => ({\n    nome:      i.json.endereco || i.json.Data || 'Ponto',\n    lat:       parseFloat(i.json.latitude),\n    lon:       parseFloat(i.json.longitude),\n    descricao: i.json.descricao || '',\n    midia:     i.json.midia || '',\n    rawDesc\n  }));\n\nconst todasPrincipais = enderecosItems.filter(i => i.json.latitude && i.json.longitude);\n\nconst pontosCadastro = todasPrincipais\n  .filter(i => (i.json.endereco || '').startsWith('Endereço Cadastro'))\n  .map(i => ({ nome: i.json.endereco, lat: parseFloat(i.json.latitude), lon: parseFloat(i.json.longitude), descricao: i.json.descricao || '', rawDesc: false }));\n\nconst pontosUltimoPing = todasPrincipais\n  .filter(i => (i.json.endereco || '').startsWith('Ultimo Ping Moto'))\n  .map(i => ({ nome: i.json.endereco, lat: parseFloat(i.json.latitude), lon: parseFloat(i.json.longitude), descricao: i.json.descricao || '', rawDesc: false }));\n\nconst pontosFixos = todasPrincipais\n  .filter(i => !(i.json.endereco || '').startsWith('Endereço Cadastro') && !(i.json.endereco || '').startsWith('Ultimo Ping Moto'))\n  .map(i => ({ nome: i.json.endereco, lat: parseFloat(i.json.latitude), lon: parseFloat(i.json.longitude), descricao: i.json.descricao || '', rawDesc: false }));\n\nconst pontosFracos  = mapPontos(enderecosFracosItems);\nconst pontosLemit   = mapPontos(enderecosLemitItems);\nconst recusas       = mapPontos(recusasItems);\nconst multas        = mapPontos(multasItems, true);\nconst cbd           = mapPontos(cbdItems, true);\nconst facematch     = mapPontos(facematchItems, true);\n\nconst telemetria = telemetriaItems\n  .filter(i => i.json.latitude && i.json.longitude)\n  .map(i => ({\n    nome:      String(i.json.Data || ''),\n    lat:       parseFloat(i.json.latitude),\n    lon:       parseFloat(i.json.longitude),\n    descricao: i.json.descricao || '',\n    rawDesc:   false\n  }));\n\nconst aparelhoRows = itensDe('BigQuery - Aparelho Compartilhado').map(i => i.json).filter(r => r.relacao);\n\nconst CORES_TERCEIRO = ['fff88c81', 'fff8bd38', 'ff24bffb', 'ffbfd42d', 'fffc84c0', 'ff3c92fb'];\nconst DIA_MS = 86400000;\n\nconst escapeHtml = (str) => String(str == null ? '' : str)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst verdadeiro = (v) => v === true || v === 'true';\nconst tituloNome = (s) => String(s || '').trim().toLowerCase().replace(/(^|\\s)(\\S)/g, (m, a, b) => a + b.toUpperCase());\nconst primeiroNome = (s) => tituloNome(s).split(' ')[0] || '';\nconst dataBR = (s) => {\n  const m = String(s || '').match(/^(\\d{2})\\/(\\d{2})\\/(\\d{4})(?:\\s+(\\d{2}):(\\d{2}))?/);\n  return m ? Date.UTC(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0)) : null;\n};\n\nconst agoraSP = Date.now() - 3 * 3600000;\nconst limiteJanela = agoraSP - 176 * DIA_MS;\n\nconst relacoes = [];\nconst porRelacao = {};\nfor (const r of aparelhoRows) {\n  const k = `${r.relacao}|${r.aparelho}|${r.terceiro_id}`;\n  if (!porRelacao[k]) {\n    porRelacao[k] = { ...r, momentos: [] };\n    relacoes.push(porRelacao[k]);\n  }\n  if (r.momento && r.latitude != null && r.latitude !== '' && r.longitude != null && r.longitude !== '') porRelacao[k].momentos.push(r);\n}\n\nconst corPorTerceiro = {};\nfor (const rel of relacoes) {\n  if (corPorTerceiro[rel.terceiro_id] === undefined) {\n    corPorTerceiro[rel.terceiro_id] = Object.keys(corPorTerceiro).length % CORES_TERCEIRO.length;\n  }\n}\n\nconst classifica = (rel) => {\n  const emprestou = rel.relacao === 'TERCEIRO_NO_CELULAR_DO_LOCATARIO';\n  const primeiro = dataBR(rel.rel_primeiro_acesso);\n  const primeiroValido = primeiro !== null && primeiro >= limiteJanela;\n  const restricao = dataBR(rel.terceiro_restricao_data);\n  const cadastro = dataBR(rel.locatario_cadastro);\n  const inicioLocacao = dataBR(rel.inicio_locacao);\n  const inicioInadimplencia = dataBR(rel.inicio_inadimplencia);\n\n  if (restricao !== null) {\n    const antesDoCadastro = cadastro !== null && restricao < cadastro && restricao >= cadastro - 365 * DIA_MS;\n    const indicou = verdadeiro(rel.terceiro_indicou_locatario);\n    const usouNaLocacao = emprestou && primeiroValido && inicioLocacao !== null && primeiro >= inicioLocacao;\n    if (antesDoCadastro || indicou || usouNaLocacao) return { tag: 'Possível fraude', leitura: 'possível laranja' };\n  }\n  if (!emprestou && primeiroValido && inicioInadimplencia !== null && primeiro >= inicioInadimplencia) {\n    return { tag: 'Atenção', leitura: 'locatário em celular de terceiro após a inadimplência' };\n  }\n  if (Number(rel.total_contas) >= 4) return { tag: 'Possível fraude', leitura: 'rede de contas no mesmo celular' };\n  if (Number(rel.rel_dias_distintos) >= 5) return { tag: 'Informativo', leitura: 'pessoa próxima' };\n  return { tag: 'Informativo', leitura: 'empréstimo pontual' };\n};\n\nconst contagemLocal = {};\nconst chaveLocal = (m) => `${Number(m.latitude).toFixed(3)},${Number(m.longitude).toFixed(3)}`;\nfor (const rel of relacoes) for (const m of rel.momentos) contagemLocal[chaveLocal(m)] = (contagemLocal[chaveLocal(m)] || 0) + 1;\nconst posicaoLocal = {};\n\nconst subpastasAparelho = relacoes.map(rel => {\n  const emprestou = rel.relacao === 'TERCEIRO_NO_CELULAR_DO_LOCATARIO';\n  const locatario = tituloNome(rel.locatario_nome) || 'Locatário';\n  const terceiro = tituloNome(rel.terceiro_nome) || `ID ${rel.terceiro_id}`;\n  const quemUsou = emprestou ? primeiroNome(rel.terceiro_nome) || terceiro : primeiroNome(rel.locatario_nome) || 'Locatário';\n  const dono = emprestou ? primeiroNome(rel.locatario_nome) || 'Locatário' : primeiroNome(rel.terceiro_nome) || terceiro;\n  const classe = classifica(rel);\n  const estilo = `aparelho${corPorTerceiro[rel.terceiro_id]}`;\n\n  const pontos = rel.momentos.map(m => {\n    const lat = parseFloat(m.latitude);\n    const lon = parseFloat(m.longitude);\n    const k = chaveLocal(m);\n    const repeticoes = contagemLocal[k];\n    const idx = posicaoLocal[k] = (posicaoLocal[k] === undefined ? 0 : posicaoLocal[k] + 1);\n    // pontos no mesmo local ficariam empilhados; espalha ~25 m e o link mantém a coordenada real\n    const ang = (2 * Math.PI * idx) / repeticoes;\n    const desloc = repeticoes > 1 ? 0.00025 : 0;\n    const acessos = Number(m.acessos_no_dia) || 0;\n    const descricao = [\n      '<![CDATA[',\n      emprestou ? '🤝 <b>Locatário emprestou o celular</b><br/>' : '📲 <b>Locatário usou o celular de terceiro</b><br/>',\n      `🏷️ <b>${classe.tag}</b> · ${classe.leitura}<br/>`,\n      '━━━━━━━━━━━━━━━━━━<br/>',\n      `👤 <b>Locatário:</b> ${escapeHtml(locatario)}<br/>`,\n      `👥 <b>Terceiro:</b> ${escapeHtml(terceiro)}<br/>`,\n      `🔗 <a href=\"${escapeHtml(rel.terceiro_admin_url)}\">Abrir no Admin</a><br/>`,\n      '━━━━━━━━━━━━━━━━━━<br/>',\n      `📊 ${acessos} ${acessos === 1 ? 'acesso' : 'acessos'} neste dia<br/>`,\n      repeticoes > 1 ? `🔁 Local repetido (${repeticoes} pontos neste local)<br/>` : '',\n      `🗺️ <a href=\"https://www.google.com/maps?q=${lat},${lon}\">Abrir no Maps</a>`,\n      ']]>'\n    ].join('');\n    return {\n      nome: `${repeticoes > 1 ? '🔁 ' : ''}${m.momento} · ${quemUsou} no celular de ${dono}`,\n      lat: lat + desloc * Math.sin(ang),\n      lon: lon + desloc * Math.cos(ang),\n      descricao,\n      rawDesc: true\n    };\n  });\n\n  const nomePasta = emprestou ? `${terceiro} usou o celular do locatário` : `Locatário usou o celular de ${terceiro}`;\n  const semPontos = pontos.length === 0\n    ? `Sem acesso nos últimos 180 dias · última conexão cruzada ${rel.ultima_conexao_cruzada || '—'}`\n    : `${pontos.length} ${pontos.length === 1 ? 'ponto' : 'pontos'}`;\n  return { nomePasta, descricaoPasta: `${classe.tag} · ${classe.leitura} · ${semPontos}`, pontos, estilo };\n});\n\nconst pontosAparelho = subpastasAparelho.reduce((s, p) => s + p.pontos.length, 0);\nconst temEmprestou = relacoes.some(r => r.relacao === 'TERCEIRO_NO_CELULAR_DO_LOCATARIO');\nconst temUsou = relacoes.some(r => r.relacao === 'LOCATARIO_NO_CELULAR_DE_TERCEIRO');\nconst leituraPlaca = temEmprestou && temUsou ? 'O locatário emprestou o próprio celular e usou o de outros'\n  : temEmprestou ? 'O locatário emprestou o celular'\n  : temUsou ? 'O locatário usou outro celular'\n  : 'Nenhum aparelho compartilhado encontrado';\n\nconst total = pontosAparelho + pontosFixos.length + pontosCadastro.length + pontosUltimoPing.length + pontosFracos.length + pontosLemit.length + telemetria.length + recusas.length + multas.length + cbd.length + facematch.length;\nif (total === 0) throw new Error(`Nenhum ponto encontrado para a placa ${placa}`);\n\nconst toPlacemarks = (pontos, styleId) => pontos.map(p => `\n    <Placemark>\n      <name>${escapeXml(p.nome)}</name>\n      <description>${p.rawDesc ? p.descricao : escapeXml(p.descricao)}</description>\n      <styleUrl>#${styleId}</styleUrl>${p.midia ? `\n      <ExtendedData><Data name=\"gx_media_links\"><value>${escapeXml(p.midia)}</value></Data></ExtendedData>` : ''}\n      <Point><coordinates>${p.lon},${p.lat},0</coordinates></Point>\n    </Placemark>`).join('');\n\nconst kml = `<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<kml xmlns=\"http://www.opengis.net/kml/2.2\">\n  <Document>\n    <name>MyMaps - ${escapeXml(placa)}</name>\n    <description>Mapa de recuperação gerado automaticamente para ${escapeXml(placa)}</description>\n\n    <Style id=\"principal\">\n      <IconStyle>\n        <scale>1.2</scale>\n        <Icon><href>${ICONS_BASE}/principal.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>\n\n    <Style id=\"cadastro\">\n      <IconStyle>\n        <scale>1.2</scale>\n        <Icon><href>${ICONS_BASE}/cadastro.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>\n\n    <Style id=\"ultimoping\">\n      <IconStyle>\n        <scale>1.2</scale>\n        <Icon><href>${ICONS_BASE}/ultimoping.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>\n\n    <Style id=\"fraco\">\n      <IconStyle>\n        <scale>1.0</scale>\n        <Icon><href>${ICONS_BASE}/fraco.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>\n\n    <Style id=\"lemit\">\n      <IconStyle>\n        <scale>1.0</scale>\n        <Icon><href>${ICONS_BASE}/lemit.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>\n\n    <Style id=\"telemetria\">\n      <IconStyle>\n        <scale>0.6</scale>\n        <Icon><href>${ICONS_BASE}/telemetria.png</href></Icon>\n      </IconStyle>\n      <LabelStyle><scale>0</scale></LabelStyle>\n    </Style>\n\n    <Style id=\"recusas\">\n      <IconStyle>\n        <scale>1.0</scale>\n        <Icon><href>${ICONS_BASE}/recusas.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>\n\n    <Style id=\"multas\">\n      <IconStyle>\n        <scale>1.0</scale>\n        <Icon><href>${ICONS_BASE}/multas.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>\n\n    <Style id=\"cbd\">\n      <IconStyle>\n        <scale>1.0</scale>\n        <Icon><href>${ICONS_BASE}/cbd.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>\n\n    <Style id=\"facematch\">\n      <IconStyle>\n        <scale>1.0</scale>\n        <Icon><href>${ICONS_BASE}/facematch.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>\n${CORES_TERCEIRO.map((cor, i) => `\n    <Style id=\"aparelho${i}\">\n      <IconStyle>\n        <color>${cor}</color>\n        <scale>1.0</scale>\n        <Icon><href>${ICONS_BASE}/aparelhosconectados.png</href></Icon>\n        <hotSpot x=\"0.5\" y=\"0\" xunits=\"fraction\" yunits=\"fraction\"/>\n      </IconStyle>\n      <LabelStyle><scale>0.8</scale></LabelStyle>\n    </Style>`).join('')}\n\n    <Folder>\n      <name>Endereços Principais (${pontosCadastro.length + pontosUltimoPing.length + pontosFixos.length + pontosFracos.length} pontos)</name>\n      ${toPlacemarks(pontosCadastro, 'cadastro')}\n      ${toPlacemarks(pontosUltimoPing, 'ultimoping')}\n      ${toPlacemarks(pontosFixos, 'principal')}\n      ${toPlacemarks(pontosFracos, 'fraco')}\n    </Folder>\n    <Folder>\n      <name>Endereços Lemit (${pontosLemit.length} pontos)</name>\n      ${toPlacemarks(pontosLemit, 'lemit')}\n    </Folder>\n    <Folder>\n      <name>Telemetria do App (${telemetria.length} pontos)</name>\n      ${toPlacemarks(telemetria, 'telemetria')}\n    </Folder>\n    <Folder>\n      <name>Recusas (${recusas.length} pontos)</name>\n      ${toPlacemarks(recusas, 'recusas')}\n    </Folder>\n    <Folder>\n      <name>Multas (${multas.length} pontos)</name>\n      ${toPlacemarks(multas, 'multas')}\n    </Folder>\n    <Folder>\n      <name>Passagens CBD (${cbd.length} pontos)</name>\n      ${toPlacemarks(cbd, 'cbd')}\n    </Folder>\n    <Folder>\n      <name>FaceMatch (${facematch.length} pontos)</name>\n      ${toPlacemarks(facematch, 'facematch')}\n    </Folder>\n    <Folder>\n      <name>Aparelho compartilhado (${pontosAparelho} pontos)</name>\n      <description>${escapeXml([leituraPlaca, ...subpastasAparelho.map(s => `${s.nomePasta}: ${s.descricaoPasta}`)].join(' | '))}</description>\n      ${subpastasAparelho.map(s => toPlacemarks(s.pontos, s.estilo)).join('')}\n    </Folder>\n  </Document>\n</kml>`;\n\nreturn {\n  placa,\n  kml,\n  totalPontos: total,\n  fileName: `mymaps_${placa}_${Date.now()}.kml`,\n  dataGeracao: new Date().toISOString()\n};"
-      },
-      "id": "c811e2db-286f-411f-86cb-06b8df9ab5b8",
-      "name": "Code - Gera KML",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3080,
-        1620
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const { kml, fileName, placa, totalPontos, dataGeracao } = $json;\nconst buffer = Buffer.from(kml, 'utf-8');\n\nreturn {\n  json: { placa, fileName, totalPontos, dataGeracao },\n  binary: {\n    data: {\n      data: buffer.toString('base64'),\n      mimeType: 'application/vnd.google-earth.kml+xml',\n      fileName: fileName,\n      fileExtension: 'kml'\n    }\n  }\n};"
-      },
-      "id": "b0bacdfc-7176-4d2b-9e2f-911a3909e964",
-      "name": "Code - Prepara Upload",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3300,
-        1620
-      ]
-    },
-    {
-      "parameters": {
-        "name": "={{ $json.fileName }}",
-        "driveId": {
-          "__rl": true,
-          "value": "My Drive",
-          "mode": "list",
-          "cachedResultName": "My Drive",
-          "cachedResultUrl": "https://drive.google.com/drive/my-drive"
-        },
-        "folderId": {
-          "__rl": true,
-          "value": "1plcJhPuM9F7ByTQiLO2v-0djMHZB3YX7",
-          "mode": "list",
-          "cachedResultName": "Projeto Mymaps Onsystem - KMLs ",
-          "cachedResultUrl": "https://drive.google.com/drive/folders/1plcJhPuM9F7ByTQiLO2v-0djMHZB3YX7"
-        },
-        "options": {}
-      },
-      "id": "2dad6541-89a0-4164-967b-1c9c56437e27",
-      "name": "Google Drive - Upload KML",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        3520,
-        1620
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "BCnIxrzH4tSDdN9R",
-          "name": "Google Drive - jonata.garcia@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "share",
-        "fileId": {
-          "mode": "id",
-          "value": "={{ $json.id }}"
-        },
-        "permissionsUi": {
-          "permissionsValues": {
-            "role": "reader",
-            "type": "anyone"
-          }
-        },
-        "options": {}
-      },
-      "id": "1dae8a9d-570c-46a9-b469-207dceb65369",
-      "name": "Google Drive - Torna Público",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        3740,
-        1620
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "BCnIxrzH4tSDdN9R",
-          "name": "Google Drive - jonata.garcia@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "jsCode": "const driveId     = $('Google Drive - Upload KML').first().json.id;\nconst placa       = $('Code - Gera KML').first().json.placa;\nconst total       = $('Code - Gera KML').first().json.totalPontos;\nconst dataGeracao = $('Code - Gera KML').first().json.dataGeracao;\n\nconst linkKMLUrl = `https://drive.google.com/uc?export=download&id=${driveId}`;\n\nconst dataFormatada = new Date(dataGeracao).toLocaleString('pt-BR', {\n  timeZone: 'America/Sao_Paulo',\n  day: '2-digit', month: '2-digit', year: 'numeric',\n  hour: '2-digit', minute: '2-digit'\n}).replace(',', '');\n\nreturn {\n  'Solicitação': \"'\" + dataFormatada,\n  'Placa': placa,\n  'URL KML': linkKMLUrl,\n  linkKML: linkKMLUrl,\n  'DriveId': driveId,\n  totalPontos: total,\n  jaExistia: false\n};"
-      },
-      "id": "bede1f72-2a84-49bd-8c16-e547be35a4e1",
-      "name": "Code - Monta Links",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        3960,
-        1620
-      ]
-    },
-    {
-      "parameters": {},
-      "id": "ad0a4d66-c5f1-4738-87d3-ba60ca0b3231",
-      "name": "Merge - Consolida Resultado",
-      "type": "n8n-nodes-base.merge",
-      "typeVersion": 3,
-      "position": [
-        4290.0,
-        540
-      ]
-    },
-    {
-      "parameters": {
-        "jsCode": "const item = $json;\n\nconst jaExistia  = item.jaExistia  || false;\nconst placa      = item.placa      || item['Placa']   || '';\nconst linkKMLRaw = item.linkKML    || item['URL KML'] || '';\n\nfunction toDownloadUrl(url) {\n  const matchFile = url.match(/\\/file\\/d\\/([^\\/]+)/);\n  if (matchFile) return 'https://drive.google.com/uc?export=download&id=' + matchFile[1];\n  const matchOpen = url.match(/[?&]id=([^&]+)/);\n  if (matchOpen) return 'https://drive.google.com/uc?export=download&id=' + matchOpen[1];\n  return url;\n}\n\nconst linkKML = toDownloadUrl(linkKMLRaw);\n\nconst linkMyMaps = 'https://www.google.com/maps/d/u/0/';\n\nconst COLOR_BG      = '#131510';\nconst COLOR_SURFACE = '#1a1c19';\nconst COLOR_BORDER  = '#424943';\nconst COLOR_TEXT    = '#e2e3de';\nconst COLOR_MUTED   = '#969e99';\nconst COLOR_GREEN   = '#00b131';\nconst COLOR_AMBER   = '#d97706';\n\nconst isNew      = !jaExistia;\nconst accent     = isNew ? COLOR_GREEN : COLOR_AMBER;\nconst accentRgb  = isNew ? '0,177,49'  : '217,119,6';\nconst icon       = isNew ? 'check_circle' : 'recycling';\nconst overline   = isNew ? 'Mapa Gerado'  : 'Mapa Existente';\nconst headline1  = isNew ? 'Mapa gerado'  : 'Mapa já';\nconst headline2  = isNew ? 'com sucesso'  : 'existente';\nconst bodyText   = isNew\n  ? `O arquivo KML da placa <strong style=\"color:${COLOR_TEXT}\">${placa}</strong> foi gerado e está pronto para uso.`\n  : `O mapa da placa <strong style=\"color:${COLOR_TEXT}\">${placa}</strong> já estava disponível.`;\nconst badgeLabel = isNew ? 'KML Pronto' : 'Já existia';\n\nconst html = `<!DOCTYPE html>\n<html lang=\"pt-BR\">\n<head>\n<meta charset=\"UTF-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n<title>MyMaps RecOps — ${placa}</title>\n<link rel=\"preconnect\" href=\"https://fonts.googleapis.com\">\n<link rel=\"preconnect\" href=\"https://fonts.gstatic.com\" crossorigin>\n<link href=\"https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,700;0,800;1,700;1,800&family=Poppins:wght@400;500&display=swap\" rel=\"stylesheet\">\n<link href=\"https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0\" rel=\"stylesheet\">\n<style>\n  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n  body {\n    font-family: 'Poppins', sans-serif;\n    background: ${COLOR_BG};\n    min-height: 100vh;\n    display: flex;\n    flex-direction: column;\n    align-items: center;\n    justify-content: center;\n    padding: 24px 16px;\n    -webkit-font-smoothing: antialiased;\n  }\n  @keyframes fadeUp {\n    from { opacity: 0; transform: translateY(16px); }\n    to   { opacity: 1; transform: translateY(0); }\n  }\n  @keyframes accentPulse {\n    0%   { transform: scale(0.8); opacity: 0.6; }\n    100% { transform: scale(1.7); opacity: 0; }\n  }\n  .card {\n    width: 100%; max-width: 460px;\n    background: ${COLOR_SURFACE};\n    border: 1px solid ${COLOR_BORDER};\n    border-radius: 16px; overflow: hidden;\n    animation: fadeUp 0.5s ease both;\n  }\n  .top-bar { height: 3px; background: ${accent}; }\n  .hero { padding: 36px 40px 28px; text-align: center; border-bottom: 1px solid ${COLOR_BORDER}; }\n  .icon-wrap { position: relative; width: 80px; height: 80px; margin: 0 auto 24px; }\n  .icon-ring {\n    position: absolute; inset: -8px; border-radius: 50%;\n    border: 1.5px solid ${accent}; opacity: 0;\n    animation: accentPulse 2s ease-out infinite;\n  }\n  .icon-circle {\n    width: 80px; height: 80px; border-radius: 50%;\n    background: rgba(${accentRgb}, 0.1);\n    border: 1.5px solid ${accent};\n    display: flex; align-items: center; justify-content: center;\n  }\n  .material-symbols-rounded { font-size: 36px; color: ${accent}; }\n  .overline {\n    font-family: 'Barlow', sans-serif;\n    font-size: 11px; font-weight: 700; font-style: italic;\n    color: ${accent}; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 8px;\n  }\n  .headline {\n    font-family: 'Barlow', sans-serif;\n    font-size: 28px; font-weight: 800; font-style: italic;\n    color: ${COLOR_TEXT}; text-transform: uppercase; line-height: 1.1;\n  }\n  .info-row {\n    padding: 16px 40px; display: flex; align-items: center; gap: 12px;\n    border-bottom: 1px solid ${COLOR_BORDER};\n    background: rgba(${accentRgb}, 0.04);\n  }\n  .info-row .material-symbols-rounded { font-size: 18px; flex-shrink: 0; }\n  .info-text { font-size: 13px; color: ${COLOR_MUTED}; line-height: 1.5; }\n  .details-row {\n    padding: 16px 40px; display: flex; align-items: center; justify-content: space-between;\n    border-bottom: 1px solid ${COLOR_BORDER};\n  }\n  .plate-wrap { display: flex; align-items: center; gap: 10px; }\n  .plate-wrap .material-symbols-rounded { font-size: 18px; color: ${COLOR_MUTED}; }\n  .plate-label { font-size: 10px; color: ${COLOR_MUTED}; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 2px; }\n  .plate-value {\n    font-family: 'Barlow', sans-serif;\n    font-size: 16px; font-weight: 700; font-style: italic;\n    color: ${COLOR_TEXT}; letter-spacing: 1.5px;\n  }\n  .badge {\n    background: rgba(${accentRgb}, 0.1);\n    border: 1px solid rgba(${accentRgb}, 0.25);\n    border-radius: 32px; padding: 4px 12px;\n    font-family: 'Barlow', sans-serif;\n    font-size: 11px; font-weight: 700; font-style: italic;\n    color: ${accent}; letter-spacing: 1px; text-transform: uppercase;\n  }\n  .actions { padding: 24px 40px; display: flex; flex-direction: column; gap: 10px; }\n  .btn-primary {\n    display: flex; align-items: center; justify-content: center; gap: 8px;\n    background: ${accent}; color: #000; text-decoration: none;\n    border-radius: 4px; padding: 15px 24px;\n    font-family: 'Barlow', sans-serif;\n    font-size: 14px; font-weight: 800; font-style: italic;\n    text-transform: uppercase; letter-spacing: 0.5px; transition: opacity 0.2s;\n  }\n  .btn-primary:hover { opacity: 0.88; }\n  .btn-primary .material-symbols-rounded { font-size: 18px; color: #000; }\n  .btn-outline {\n    display: flex; align-items: center; justify-content: center; gap: 8px;\n    background: transparent; color: ${accent}; text-decoration: none;\n    border: 1.5px solid ${accent}; border-radius: 4px; padding: 13px 24px;\n    font-family: 'Barlow', sans-serif;\n    font-size: 14px; font-weight: 800; font-style: italic;\n    text-transform: uppercase; letter-spacing: 0.5px; transition: background 0.2s;\n  }\n  .btn-outline:hover { background: rgba(${accentRgb}, 0.08); }\n  .btn-outline .material-symbols-rounded { font-size: 18px; color: ${accent}; }\n  .btn-secondary {\n    display: flex; align-items: center; justify-content: center; gap: 6px;\n    width: 100%; background: transparent;\n    border: 1px solid ${COLOR_BORDER}; border-radius: 4px;\n    color: ${COLOR_MUTED}; padding: 12px 24px;\n    font-family: 'Poppins', sans-serif; font-size: 13px;\n    cursor: pointer; text-decoration: none; transition: color 0.2s, border-color 0.2s;\n  }\n  .btn-secondary:hover { color: ${COLOR_TEXT}; border-color: ${COLOR_MUTED}; }\n  .btn-secondary .material-symbols-rounded { font-size: 16px; }\n  footer {\n    margin-top: 20px; font-size: 11px; color: ${COLOR_MUTED};\n    opacity: 0.4; text-align: center; font-family: 'Poppins', sans-serif;\n  }\n  footer span { color: ${COLOR_GREEN}; opacity: 1; }\n</style>\n</head>\n<body>\n<div class=\"card\">\n  <div class=\"top-bar\"></div>\n  <div class=\"hero\">\n    <div class=\"icon-wrap\">\n      <div class=\"icon-ring\"></div>\n      <div class=\"icon-circle\">\n        <span class=\"material-symbols-rounded\" aria-hidden=\"true\">${icon}</span>\n      </div>\n    </div>\n    <p class=\"overline\">${overline}</p>\n    <h1 class=\"headline\">${headline1}<br>${headline2}</h1>\n  </div>\n  <div class=\"info-row\">\n    <span class=\"material-symbols-rounded\" aria-hidden=\"true\" style=\"color:${accent}\">info</span>\n    <p class=\"info-text\">${bodyText}</p>\n  </div>\n  <div class=\"details-row\">\n    <div class=\"plate-wrap\">\n      <span class=\"material-symbols-rounded\" aria-hidden=\"true\">two_wheeler</span>\n      <div>\n        <p class=\"plate-label\">Placa</p>\n        <p class=\"plate-value\">${placa}</p>\n      </div>\n    </div>\n    <span class=\"badge\">${badgeLabel}</span>\n  </div>\n  <div class=\"actions\">\n    <a href=\"${linkKML}\" class=\"btn-primary\" download=\"mapa-${placa}.kml\">\n      <span class=\"material-symbols-rounded\" aria-hidden=\"true\">download</span>\n      Baixar KML\n    </a>\n    <a href=\"${linkMyMaps}\" class=\"btn-outline\" target=\"_blank\" rel=\"noopener\">\n      <span class=\"material-symbols-rounded\" aria-hidden=\"true\">map</span>\n      Abrir Google My Maps\n    </a>\n    <a href=\"javascript:history.back()\" class=\"btn-secondary\">\n      <span class=\"material-symbols-rounded\" aria-hidden=\"true\">arrow_back</span>\n      Solicitar outro mapa\n    </a>\n  </div>\n</div>\n<footer>Mottu RecOps · <span>MyMaps Automation</span> · Powered by N8N</footer>\n</body>\n</html>`;\n\nreturn { html };"
-      },
-      "id": "de44032f-7766-4d84-b75f-dc11ef21afbd",
-      "name": "Code - Prepara Resposta",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        4510.0,
-        540
-      ]
-    },
-    {
-      "parameters": {
-        "operation": "deleteFile",
-        "fileId": {
-          "__rl": true,
-          "value": "={{ $json.id }}",
-          "mode": "id"
-        },
-        "options": {}
-      },
-      "id": "5531f794-3ddb-4ab6-af24-b594012f0ad8",
-      "name": "Google Drive - Deleta KML",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        440,
-        0
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "BCnIxrzH4tSDdN9R",
-          "name": "Google Drive - jonata.garcia@mottu.com.br"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "multipleMethods": true,
-        "httpMethod": [
-          "GET"
-        ],
-        "path": "solicitar-mymaps",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2.1,
-      "position": [
-        0,
-        540
-      ],
-      "id": "408c456a-2ae8-44f1-a880-d308a3ec7f93",
-      "name": "Webhook",
-      "webhookId": "9b6d9c1d-7982-4802-b2c4-b0f5bda3d0c4"
-    },
-    {
-      "parameters": {
-        "respondWith": "text",
-        "responseBody": "={{ $json.html }}",
-        "options": {
-          "responseHeaders": {
-            "entries": [
-              {
-                "name": "Content-Type",
-                "value": "text/html; charset=utf-8"
-              }
-            ]
-          }
-        }
-      },
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1.5,
-      "position": [
-        4730.0,
-        540
-      ],
-      "id": "434fe482-db57-4a14-8934-dbbaf5bd975c",
-      "name": "Respond to Webhook1"
-    },
-    {
-      "parameters": {
-        "projectId": "dm-mottu-aluguel",
-        "sqlQuery": "WITH base AS (\n  SELECT usuarioId AS usuario_id\n  FROM `dm-mottu-aluguel.exp_frota.frota_atual`\n  WHERE placa = '{{ $(\"Code - Extrai Placa\").first().json.placa }}'\n)\nSELECT\n  ROW_NUMBER() OVER (ORDER BY data_ultima_atividade DESC) AS linha,\n  CONCAT('Lemit - ', INITCAP(subTipo)) AS endereco,\n  latitude,\n  longitude,\n  CONCAT(\n    '<![CDATA[',\n    '🛰️ <b>Lemit - ', INITCAP(subTipo), '</b><br/>',\n    '📅 <b>Última Atividade:</b> ', FORMAT_TIMESTAMP('%d/%m/%Y', data_ultima_atividade), '<br/>',\n    '📍 <b>Localização:</b> ', CAST(latitude AS STRING), ', ', CAST(longitude AS STRING), '<br/>',\n    '🗺️ <a href=\"https://www.google.com/maps?q=', CAST(latitude AS STRING), ',', CAST(longitude AS STRING), '\">Abrir no Maps</a>',\n    ']]>'\n  ) AS descricao\nFROM `dm-mottu-aluguel.flt_servicos_rua.customer_address_current`\nJOIN base USING (usuario_id)\nWHERE tipo = 'lemit'\nORDER BY linha",
-        "options": {}
-      },
-      "id": "9a7c6aee-b924-431b-90b3-f871f388bd7b",
-      "name": "BigQuery - Endereços Lemit",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2,
-      "position": [
-        1210.0,
-        1620
-      ],
-      "credentials": {
-        "googleBigQueryOAuth2Api": {
-          "id": "fEvX6CLoEoQBCMyd",
-          "name": "Google BigQuery - leonardo.fava@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "projectId": "dm-mottu-aluguel",
-        "sqlQuery": "WITH base AS (\n  SELECT usuarioId AS usuario_id\n  FROM `dm-mottu-aluguel.exp_frota.frota_atual`\n  WHERE placa = '{{ $(\"Code - Extrai Placa\").first().json.placa }}'\n)\nSELECT\n  ROW_NUMBER() OVER (ORDER BY data_ultimo_pernoite DESC) AS linha,\n  CONCAT('Endereço Fraco - ', FORMAT_TIMESTAMP('%d/%m/%Y', data_ultimo_pernoite)) AS endereco,\n  lat_mediana_media AS latitude,\n  long_mediana_media AS longitude,\n  CONCAT(\n    'https://www.google.com/maps?q=',\n    CAST(lat_mediana_media AS STRING), ',',\n    CAST(long_mediana_media AS STRING)\n  ) AS descricao\nFROM `dm-mottu-aluguel.flt_telemetria.telemetria_endereco_virtual_agregado`\nJOIN base ON usuarioId = base.usuario_id\nWHERE grupos_periodos_cluster = 'Endereço fraco'\nORDER BY linha",
-        "options": {}
-      },
-      "id": "5026d635-2791-4ac7-bac9-2eaf7667a0a4",
-      "name": "BigQuery - Endereços Fracos",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2,
-      "position": [
-        1210.0,
-        1440
-      ],
-      "credentials": {
-        "googleBigQueryOAuth2Api": {
-          "id": "fEvX6CLoEoQBCMyd",
-          "name": "Google BigQuery - leonardo.fava@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "projectId": "dm-mottu-aluguel",
-        "sqlQuery": "SELECT\n  CONCAT('Recusa - ', FORMAT_TIMESTAMP('%d/%m/%Y %H:%M', e.dataEvento)) AS endereco,\n  e.latitude,\n  e.longitude,\n  CONCAT(\n    '<![CDATA[',\n    '❌ Motivo: ', IFNULL(e.motivo_recusa, '-'), '<br/><br/>',\n    '💬 Comentário: ', IFNULL(e.comentario_recusa, '-'), '<br/><br/>',\n    '🗺️ <a href=\"https://www.google.com/maps?q=', CAST(e.latitude AS STRING), ',', CAST(e.longitude AS STRING), '\">Abrir no Maps</a>',\n    ']]>'\n  ) AS descricao\nFROM `dm-mottu-aluguel.flt_servicos_rua.eventos_rua_ciclo` e\nWHERE e.usuarioid = (\n    SELECT usuarioId FROM `dm-mottu-aluguel.exp_frota.frota_atual`\n    WHERE placa = '{{ $(\"Code - Extrai Placa\").first().json.placa }}'\n    LIMIT 1\n  )\n  AND e.motivo_recusa IS NOT NULL\n  AND e.latitude IS NOT NULL\n  AND e.longitude IS NOT NULL\nORDER BY e.dataEvento DESC",
-        "options": {}
-      },
-      "id": "1c598d08-fd79-40e1-a3fd-539f893a12e4",
-      "name": "BigQuery -Recusas",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2,
-      "position": [
-        1210.0,
-        1800
-      ],
-      "credentials": {
-        "googleBigQueryOAuth2Api": {
-          "id": "fEvX6CLoEoQBCMyd",
-          "name": "Google BigQuery - leonardo.fava@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "projectId": "dm-mottu-aluguel",
-        "sqlQuery": "SELECT\n  CONCAT('Multa - ', FORMAT_TIMESTAMP('%d/%m/%Y', m.infracaoData)) AS endereco,\n  CONCAT(m.localocorrencia, ', Brasil')                            AS endereco_geocoding,\n  m.descricao                                                      AS motivo\nFROM `dm-mottu-aluguel.flt_multas.base_multas_raw` m\nWHERE m.placa = REPLACE('{{ $(\"Code - Extrai Placa\").first().json.placa }}', '-', '')\n  AND (\n    -- Caso 1: multa vinculada ao último locatário\n    m.usuarioid = (\n      SELECT usuarioId\n      FROM `dm-mottu-aluguel.exp_frota.frota_historico`\n      WHERE placa = '{{ $(\"Code - Extrai Placa\").first().json.placa }}'\n        AND usuarioId IS NOT NULL\n      ORDER BY inicio_data_locacao DESC\n      LIMIT 1\n    )\n    OR (\n      -- Caso 2: multa sem usuário mas após início da última locação\n      m.usuarioid IS NULL\n      AND m.infracaoData >= (\n        SELECT inicio_data_locacao\n        FROM `dm-mottu-aluguel.exp_frota.frota_historico`\n        WHERE placa = '{{ $(\"Code - Extrai Placa\").first().json.placa }}'\n          AND usuarioId IS NOT NULL\n        ORDER BY inicio_data_locacao DESC\n        LIMIT 1\n      )\n    )\n    OR (\n      -- Caso 3: multa vinculada ao RPA após início da última locação\n      m.usuarioid = 180534\n      AND m.infracaoData >= (\n        SELECT inicio_data_locacao\n        FROM `dm-mottu-aluguel.exp_frota.frota_historico`\n        WHERE placa = '{{ $(\"Code - Extrai Placa\").first().json.placa }}'\n          AND usuarioId IS NOT NULL\n        ORDER BY inicio_data_locacao DESC\n        LIMIT 1\n      )\n    )\n  )\n  AND m.localocorrencia IS NOT NULL\nORDER BY m.infracaoData DESC",
-        "options": {}
-      },
-      "id": "c1fa7860-5501-4294-ab06-97c3ba4e1390",
-      "name": "BigQuery -Multas",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2,
-      "position": [
-        1210.0,
-        2160
-      ],
-      "credentials": {
-        "googleBigQueryOAuth2Api": {
-          "id": "fEvX6CLoEoQBCMyd",
-          "name": "Google BigQuery - leonardo.fava@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "url": "https://maps.googleapis.com/maps/api/geocode/json",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpQueryAuth",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "address",
-              "value": "={{ $json.endereco_geocoding }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        1650.0,
-        2160
-      ],
-      "id": "445f2448-9cf2-4bd6-ba02-0bf35dcdea2b",
-      "name": "HTTP Request",
-      "credentials": {
-        "httpQueryAuth": {
-          "id": "YFDptM7XDR0GNSDX",
-          "name": "Geocoding API Key"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForEachItem",
-        "jsCode": "const results = $json.results;\nconst endereco = $('BigQuery -Multas').item.json.endereco;\nconst endereco_geocoding = $('BigQuery -Multas').item.json.endereco_geocoding;\nconst motivo = $('BigQuery -Multas').item.json.motivo;\n\nlet latitude = null;\nlet longitude = null;\nlet precisao_raw = 'NAO_ENCONTRADO';\n\nif (results && results.length > 0) {\n  latitude     = results[0].geometry.location.lat;\n  longitude    = results[0].geometry.location.lng;\n  precisao_raw = results[0].geometry.location_type;\n}\n\nconst precisaoLabel = {\n  'ROOFTOP':            '🟢 Ponto exato',\n  'RANGE_INTERPOLATED': '🟡 Estimado na rua',\n  'GEOMETRIC_CENTER':   '🟠 Centro da rua/bairro',\n  'APPROXIMATE':        '🟠 Localização aproximada',\n  'NAO_ENCONTRADO':     '🔴 Não encontrado'\n};\n\nconst precisao = precisaoLabel[precisao_raw] || `🔴 ${precisao_raw}`;\n\nconst html = (s) => String(s == null ? '' : s)\n  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst descricao = [\n  '<![CDATA[',\n  `🚨 <b>Infração:</b> ${html(motivo)}<br/><br/>`,\n  `📍 <b>Local:</b> ${html(endereco_geocoding)}<br/><br/>`,\n  latitude && longitude\n    ? `<b>Precisão:</b> ${precisao}<br/><br/>🗺️ <a href=\"https://www.google.com/maps?q=${latitude},${longitude}\">Abrir no Maps</a>`\n    : '🔴 Endereço não encontrado',\n  ']]>'\n].join('');\n\nreturn {\n  endereco:  endereco,\n  latitude:  latitude,\n  longitude: longitude,\n  descricao: descricao\n};"
-      },
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1870.0,
-        2160
-      ],
-      "id": "49ef655e-acbf-46fb-820b-73cb854f9d90",
-      "name": "Code - BQ + Geocod"
-    },
-    {
-      "parameters": {
-        "conditions": {
-          "options": {
-            "caseSensitive": true,
-            "leftValue": "",
-            "typeValidation": "strict",
-            "version": 3
-          },
-          "conditions": [
-            {
-              "leftValue": "={{ $json.endereco_geocoding }}",
-              "rightValue": "=",
-              "operator": {
-                "type": "string",
-                "operation": "notEmpty",
-                "singleValue": true
-              },
-              "id": "130a5523-8626-418d-a364-b8af138d7b57"
-            }
-          ],
-          "combinator": "and"
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.if",
-      "typeVersion": 2.3,
-      "position": [
-        1430.0,
-        2160
-      ],
-      "id": "12450d5a-fbb9-494e-8e82-1bc842de5442",
-      "name": "If - Existe multa ?"
-    },
-    {
-      "parameters": {
-        "projectId": "dm-mottu-aluguel",
-        "sqlQuery": "WITH loc AS (\n  SELECT DISTINCT f.placa, f.usuarioId AS locatario_id,\n    DATE(f.inicio_data_locacao, 'America/Sao_Paulo') AS inicio_locacao,\n    DATE_SUB(CURRENT_DATE('America/Sao_Paulo'), INTERVAL f.dias_inadimplencia DAY) AS inicio_inadimplencia\n  FROM `dm-mottu-aluguel.exp_frota.frota_atual` f\n  WHERE f.placa IN UNNEST(['{{ $(\"Code - Extrai Placa\").first().json.placa }}']) AND f.usuarioId IS NOT NULL\n),\npares AS (\n  SELECT d.aparelho, d.conta_principal, d.conta_secundaria, d.ultima_conexao_principal, d.ultima_conexao_secundaria\n  FROM `dm-mottu-aluguel.flt_prevencao_perdas.device_com_multiplos_usuarios` d\n  WHERE d.aparelho IN (\n    SELECT aparelho FROM `dm-mottu-aluguel.flt_prevencao_perdas.device_com_multiplos_usuarios`\n    WHERE conta_principal IN (SELECT locatario_id FROM loc) OR conta_secundaria IN (SELECT locatario_id FROM loc)\n  )\n),\ncontas_aparelho AS (\n  SELECT aparelho, COUNT(DISTINCT u) AS total_contas\n  FROM pares, UNNEST([conta_principal, conta_secundaria]) AS u\n  GROUP BY 1\n),\nrel AS (\n  SELECT l.placa, l.locatario_id, l.inicio_locacao, l.inicio_inadimplencia, p.aparelho,\n    'LOCATARIO_NO_CELULAR_DE_TERCEIRO' AS relacao,\n    p.conta_principal AS terceiro_id, p.conta_secundaria AS quem_usou_id, p.conta_principal AS dono_celular_id,\n    p.ultima_conexao_secundaria AS ultima_conexao_cruzada\n  FROM loc l JOIN pares p ON p.conta_secundaria = l.locatario_id\n  UNION ALL\n  SELECT l.placa, l.locatario_id, l.inicio_locacao, l.inicio_inadimplencia, p.aparelho,\n    'TERCEIRO_NO_CELULAR_DO_LOCATARIO',\n    p.conta_secundaria, p.conta_secundaria, p.conta_principal,\n    p.ultima_conexao_secundaria\n  FROM loc l JOIN pares p ON p.conta_principal = l.locatario_id\n),\ntel AS (\n  SELECT t.Androidid AS aparelho, t.usuarioid, t.eventdate, t.latitude, t.longitude\n  FROM `dm-mottu-aluguel.flt_telemetria.device_telemetria_processada` t\n  WHERE t.eventdate >= DATETIME_SUB(CURRENT_DATETIME('America/Sao_Paulo'), INTERVAL 180 DAY)\n    AND t.Androidid IN (SELECT aparelho FROM rel)\n),\ndia AS (\n  SELECT aparelho, usuarioid, DATE(eventdate) AS dia, COUNT(*) AS acessos,\n    ARRAY_AGG(STRUCT(eventdate, latitude, longitude) ORDER BY eventdate LIMIT 1)[OFFSET(0)] AS p\n  FROM tel GROUP BY 1, 2, 3\n),\nrestr AS (\n  SELECT usuarioid, ARRAY_AGG(STRUCT(criacaodata AS dt, motivo_restricao AS motivo) ORDER BY criacaodata LIMIT 1)[OFFSET(0)] AS r\n  FROM `dm-mottu-aluguel.flt_prevencao_perdas.usuario_restricao`\n  WHERE usuarioid IN (SELECT terceiro_id FROM rel UNION DISTINCT SELECT locatario_id FROM rel)\n  GROUP BY 1\n),\nu AS (\n  SELECT usuarioId, nome_usuario, situacao_locacao_descricao, possuiRestricaoAtiva, dtime_cadastro, usuarioIndicacaoId\n  FROM `dm-mottu-aluguel.grw_usuarios.usuarios_detalhes`\n  WHERE usuarioId IN (SELECT terceiro_id FROM rel UNION DISTINCT SELECT locatario_id FROM rel)\n)\nSELECT\n  r.placa, r.relacao, r.aparelho, ca.total_contas,\n  r.locatario_id, ul.nome_usuario AS locatario_nome,\n  FORMAT_TIMESTAMP('%d/%m/%Y', ul.dtime_cadastro, 'America/Sao_Paulo') AS locatario_cadastro,\n  ul.usuarioIndicacaoId AS locatario_indicado_por,\n  FORMAT_DATE('%d/%m/%Y', r.inicio_locacao) AS inicio_locacao,\n  FORMAT_DATE('%d/%m/%Y', r.inicio_inadimplencia) AS inicio_inadimplencia,\n  r.terceiro_id, ut.nome_usuario AS terceiro_nome, ut.situacao_locacao_descricao AS terceiro_situacao,\n  ut.possuiRestricaoAtiva AS terceiro_restrito,\n  FORMAT_TIMESTAMP('%d/%m/%Y', rt.r.dt, 'America/Sao_Paulo') AS terceiro_restricao_data,\n  rt.r.motivo AS terceiro_restricao_motivo,\n  ul.usuarioIndicacaoId = r.terceiro_id AS terceiro_indicou_locatario,\n  ut.usuarioIndicacaoId = r.locatario_id AS terceiro_indicado_pelo_locatario,\n  CONCAT('https://admin-v3.mottu.cloud/customer-success/user-detail/', CAST(r.terceiro_id AS STRING)) AS terceiro_admin_url,\n  r.dono_celular_id,\n  FORMAT_DATETIME('%d/%m/%Y %H:%M', r.ultima_conexao_cruzada) AS ultima_conexao_cruzada,\n  COUNT(dd.dia) OVER w AS rel_dias_distintos,\n  SUM(dd.acessos) OVER w AS rel_acessos,\n  FORMAT_DATETIME('%d/%m/%Y %H:%M', MIN(dd.p.eventdate) OVER w) AS rel_primeiro_acesso,\n  FORMAT_DATETIME('%d/%m/%Y %H:%M', MAX(dd.p.eventdate) OVER w) AS rel_ultimo_acesso,\n  FORMAT_DATETIME('%d/%m/%Y %H:%M', dd.p.eventdate) AS momento,\n  dd.p.latitude AS latitude, dd.p.longitude AS longitude, dd.acessos AS acessos_no_dia\nFROM rel r\nJOIN contas_aparelho ca USING (aparelho)\nLEFT JOIN dia dd ON dd.aparelho = r.aparelho AND dd.usuarioid = r.quem_usou_id\nLEFT JOIN u ul ON ul.usuarioId = r.locatario_id\nLEFT JOIN u ut ON ut.usuarioId = r.terceiro_id\nLEFT JOIN restr rt ON rt.usuarioid = r.terceiro_id\nWINDOW w AS (PARTITION BY r.placa, r.aparelho, r.terceiro_id)\nORDER BY r.placa, r.relacao, r.terceiro_id, dd.p.eventdate",
-        "options": {}
-      },
-      "id": "3d4e5f60-7182-4a93-9b4c-5d6e7f8091a2",
-      "name": "BigQuery - Aparelho Compartilhado",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2,
-      "position": [
-        1210.0,
-        2340
-      ],
-      "credentials": {
-        "googleBigQueryOAuth2Api": {
-          "id": "fEvX6CLoEoQBCMyd",
-          "name": "Google BigQuery - leonardo.fava@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "url": "=https://monitor-integrator-manager.mottu.cloud/api/v2/CarBigData/{{ $('Code - Extrai Placa').first().json.placa.replace('-', '') }}/images",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "oAuth2Api",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "limit",
-              "value": "100"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        1430.0,
-        1260
-      ],
-      "id": "a3f1c2d4-5b6e-4f78-9a01-b2c3d4e5f601",
-      "name": "HTTP - Imagens CBD",
-      "executeOnce": true,
-      "alwaysOutputData": true,
-      "onError": "continueRegularOutput",
-      "credentials": {
-        "oAuth2Api": {
-          "id": "g9tmffmisM5yKM8e",
-          "name": "n8n-controle-de-frota-carteira-recops-sp-atualizacao-diaria-grupo-a-backend-client"
-        }
-      },
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
-    },
-    {
-      "parameters": {
-        "jsCode": "const respostas = $('HTTP - Imagens CBD').all().map(i => i.json);\nconst imagens = respostas.flatMap(r => (r && r.result && Array.isArray(r.result.images)) ? r.result.images : []);\n\nconst referencias = $('BigQuery - Endereços Principais').all()\n  .map(i => i.json)\n  .filter(r => /^(Ultimo Ping Moto|Endereço Pernoite|Pernoite Celular)/.test(r.endereco || ''))\n  .map(r => ({ lat: parseFloat(r.latitude), lon: parseFloat(r.longitude) }))\n  .filter(r => !isNaN(r.lat) && !isNaN(r.lon));\n\nconst RAIO_KM = 200;\nconst distanciaKm = (a, b) => {\n  const rad = (g) => g * Math.PI / 180;\n  const dLat = rad(b.lat - a.lat);\n  const dLon = rad(b.lon - a.lon);\n  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;\n  return 6371 * 2 * Math.asin(Math.sqrt(h));\n};\n\nconst KEYCAP = (n) => String(n).split('').map(d => d + '️⃣').join('');\nconst dataHora = (iso) => {\n  const [d, t] = String(iso).split('T');\n  const [a, m, dia] = d.split('-');\n  return `${dia}/${m}/${a} ${t.slice(0, 5)}`;\n};\n\nconst vistas = new Set();\nconst porLocal = {};\nfor (const img of imagens) {\n  const lat = parseFloat(img.latitude);\n  const lon = parseFloat(img.longitude);\n  if (isNaN(lat) || isNaN(lon) || !img.captureDate) continue;\n  if (!referencias.some(r => distanciaKm(r, { lat, lon }) <= RAIO_KM)) continue;\n  const chaveCaptura = `${lat}|${lon}|${img.captureDate}`;\n  if (vistas.has(chaveCaptura)) continue;\n  vistas.add(chaveCaptura);\n  const local = `${lat}|${lon}`;\n  if (!porLocal[local]) porLocal[local] = { lat, lon, capturas: [] };\n  porLocal[local].capturas.push(img);\n}\n\nreturn Object.values(porLocal)\n  .map(l => {\n    const capturas = l.capturas.sort((a, b) => String(a.captureDate).localeCompare(String(b.captureDate)));\n    const ultima = capturas[capturas.length - 1];\n    const historico = capturas\n      .map((c, i) => `${KEYCAP(i + 1)} ${dataHora(c.captureDate)}`)\n      .reverse()\n      .join('<br/>');\n    return {\n      json: {\n        endereco: `📸 ${capturas.length}a Passagem CBD - ${dataHora(ultima.captureDate)}`,\n        latitude: l.lat,\n        longitude: l.lon,\n        ultima_captura_chave: String(ultima.captureDate).slice(0, 16).replace('T', ' '),\n        descricao: [\n          '<![CDATA[',\n          '📸 <b>CarBigData</b><br/>',\n          '━━━━━━━━━━━━━━━━━━<br/>',\n          `📍 <b>Localização:</b> ${l.lat}, ${l.lon}<br/>`,\n          `🗺️ <a href=\"https://www.google.com/maps?q=${l.lat},${l.lon}\">Abrir no Maps</a><br/>`,\n          '━━━━━━━━━━━━━━━━━━<br/>',\n          '📋 <b>Histórico de Passagens:</b><br/>',\n          historico,\n          ']]>'\n        ].join(''),\n        foto_url: ultima.imageUrl || '',\n        imagens_api: imagens.length\n      }\n    };\n  })\n  .sort((a, b) => b.json.ultima_captura_chave.localeCompare(a.json.ultima_captura_chave));"
-      },
-      "id": "e7d50618-9fa2-43b2-9e45-f60718293a45",
-      "name": "Code - Seleciona Foto CBD",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1650.0,
-        1260
-      ]
-    },
-    {
-      "parameters": {
-        "url": "={{ $json.foto_url }}",
-        "options": {
-          "response": {
-            "response": {
-              "responseFormat": "file",
-              "outputPropertyName": "data"
-            }
-          }
-        }
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        1870.0,
-        1260
-      ],
-      "id": "c5b3e4f6-7d80-4190-9c23-d4e5f6071823",
-      "name": "HTTP - Baixa Foto CBD",
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "name": "={{ 'cbd_' + $('Code - Extrai Placa').first().json.placa + '_' + $itemIndex + '_' + $now.toMillis() + '.jpg' }}",
-        "driveId": {
-          "__rl": true,
-          "value": "My Drive",
-          "mode": "list",
-          "cachedResultName": "My Drive",
-          "cachedResultUrl": "https://drive.google.com/drive/my-drive"
-        },
-        "folderId": {
-          "__rl": true,
-          "value": "1plcJhPuM9F7ByTQiLO2v-0djMHZB3YX7",
-          "mode": "list",
-          "cachedResultName": "Projeto Mymaps Onsystem - KMLs ",
-          "cachedResultUrl": "https://drive.google.com/drive/folders/1plcJhPuM9F7ByTQiLO2v-0djMHZB3YX7"
-        },
-        "options": {}
-      },
-      "id": "f8e6172a-0b13-44c3-8f56-07182a3b4c56",
-      "name": "Google Drive - Upload Foto CBD",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        2090.0,
-        1260
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "BCnIxrzH4tSDdN9R",
-          "name": "Google Drive - jonata.garcia@mottu.com.br"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "operation": "share",
-        "fileId": {
-          "mode": "id",
-          "value": "={{ $json.id }}"
-        },
-        "permissionsUi": {
-          "permissionsValues": {
-            "role": "reader",
-            "type": "anyone"
-          }
-        },
-        "options": {}
-      },
-      "id": "0a1b2c3d-4e5f-4607-a819-2a3b4c5d6e70",
-      "name": "Google Drive - Torna Foto Pública",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        2310.0,
-        1260
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "BCnIxrzH4tSDdN9R",
-          "name": "Google Drive - jonata.garcia@mottu.com.br"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "jsCode": "const passagens = $('Code - Seleciona Foto CBD').all();\nconst uploads   = $('Google Drive - Upload Foto CBD').all();\nconst shares    = $('Google Drive - Torna Foto Pública').all();\n\nreturn passagens.map((item, i) => {\n  const { foto_url, imagens_api, ...p } = item.json;\n  const fileId = uploads[i] && uploads[i].json && !uploads[i].json.error && uploads[i].json.id;\n  const publica = shares[i] && shares[i].json && !shares[i].json.error;\n\n  let foto_cbd = 'sem_match';\n  let midia = '';\n  if (foto_url && !fileId) foto_cbd = 'falha_upload';\n  if (foto_url && fileId && !publica) foto_cbd = 'falha_compartilhar';\n\n  if (foto_url && fileId && publica) {\n    foto_cbd = 'ok';\n    midia = `https://lh3.googleusercontent.com/d/${fileId}`;\n    p.descricao = (p.descricao || '').replace('<![CDATA[', `<![CDATA[<img src=\"${midia}\" width=\"300\"/><br/><br/>`);\n  }\n\n  return { json: { ...p, midia, debug: { foto_cbd, imagens_api, chave: p.ultima_captura_chave } } };\n});"
-      },
-      "id": "b4a2d3e5-6c7f-4089-8b12-c3d4e5f60712",
-      "name": "Code - Anexa Foto CBD",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        2530.0,
-        1260
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "fileFolder",
-        "searchMethod": "query",
-        "queryString": "={{ \"'1plcJhPuM9F7ByTQiLO2v-0djMHZB3YX7' in parents and name contains 'cbd_' and trashed = false and createdTime < '\" + $now.minus({ days: 3 }).toUTC().toISO() + \"'\" }}",
-        "returnAll": true,
-        "filter": {},
-        "options": {}
-      },
-      "id": "1b2c3d4e-5f60-4718-b92a-3b4c5d6e7f81",
-      "name": "Google Drive - Lista Fotos Expiradas",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        220,
-        180
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "BCnIxrzH4tSDdN9R",
-          "name": "Google Drive - jonata.garcia@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "deleteFile",
-        "fileId": {
-          "__rl": true,
-          "value": "={{ $json.id }}",
-          "mode": "id"
-        },
-        "options": {}
-      },
-      "id": "2c3d4e5f-6071-4829-8a3b-4c5d6e7f8092",
-      "name": "Google Drive - Deleta Foto CBD",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        440,
-        180
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "BCnIxrzH4tSDdN9R",
-          "name": "Google Drive - jonata.garcia@mottu.com.br"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "resource": "fileFolder",
-        "searchMethod": "query",
-        "queryString": "={{ \"'1plcJhPuM9F7ByTQiLO2v-0djMHZB3YX7' in parents and name contains 'mymaps_\" + $('Code - Extrai Placa').first().json.placa + \"_' and trashed = false and createdTime > '\" + $now.minus({ days: 3 }).toUTC().toISO() + \"'\" }}",
-        "returnAll": true,
-        "filter": {},
-        "options": {}
-      },
-      "id": "4e5f6071-8293-4a04-9b5c-6d7e8f90a1b3",
-      "name": "Google Drive - Busca KML Existente",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        440,
-        540
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "BCnIxrzH4tSDdN9R",
-          "name": "Google Drive - jonata.garcia@mottu.com.br"
-        }
-      },
-      "alwaysOutputData": true,
-      "retryOnFail": true
-    },
-    {
-      "parameters": {
-        "resource": "fileFolder",
-        "searchMethod": "query",
-        "queryString": "={{ \"'1plcJhPuM9F7ByTQiLO2v-0djMHZB3YX7' in parents and name contains 'mymaps_' and trashed = false and createdTime < '\" + $now.minus({ days: 3 }).toUTC().toISO() + \"'\" }}",
-        "returnAll": true,
-        "filter": {},
-        "options": {}
-      },
-      "id": "5f607182-93a4-4b15-8c6d-7e8f90a1b2c4",
-      "name": "Google Drive - Lista KMLs Expirados",
-      "type": "n8n-nodes-base.googleDrive",
-      "typeVersion": 3,
-      "position": [
-        220,
-        0
-      ],
-      "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "BCnIxrzH4tSDdN9R",
-          "name": "Google Drive - jonata.garcia@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "projectId": "dm-mottu-aluguel",
-        "sqlQuery": "SELECT\n  FORMAT_DATETIME('%d-%m-%Y %H:%M:%S', eventdate) AS Data,\n  latitude,\n  longitude,\n  CONCAT(\n    'https://www.google.com/maps?q=',\n    CAST(latitude AS STRING), ',',\n    CAST(longitude AS STRING)\n  ) AS descricao\nFROM `dm-mottu-aluguel.flt_telemetria.device_telemetria_processada`\nWHERE usuarioid = (\n    SELECT usuarioId FROM `dm-mottu-aluguel.exp_frota.frota_atual`\n    WHERE placa = '{{ $(\"Code - Extrai Placa\").first().json.placa }}'\n    LIMIT 1\n  )\n  AND eventdate >= DATETIME_SUB(CURRENT_DATETIME(), INTERVAL 150 DAY)\n  AND latitude IS NOT NULL\n  AND longitude IS NOT NULL\nORDER BY eventdate DESC\nLIMIT 200",
-        "options": {}
-      },
-      "id": "697a4053-52e9-42e3-bbf6-a8e8c6a75524",
-      "name": "BigQuery - Telemetria App",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2,
-      "position": [
-        1210.0,
-        900
-      ],
-      "credentials": {
-        "googleBigQueryOAuth2Api": {
-          "id": "fEvX6CLoEoQBCMyd",
-          "name": "Google BigQuery - leonardo.fava@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "projectId": "dm-mottu-aluguel",
-        "sqlQuery": "SELECT\n  usuarioId,\n  FORMAT_DATETIME('%Y-%m-%dT%H:%M:%S', DATETIME_SUB(CURRENT_DATETIME('America/Sao_Paulo'), INTERVAL 365 DAY)) AS facematch_inicio,\n  FORMAT_DATETIME('%Y-%m-%dT%H:%M:%S', CURRENT_DATETIME('America/Sao_Paulo')) AS fim\nFROM `dm-mottu-aluguel.exp_frota.frota_atual`\nWHERE placa = '{{ $(\"Code - Extrai Placa\").first().json.placa }}'\n  AND usuarioId IS NOT NULL\nLIMIT 1",
-        "options": {}
-      },
-      "id": "6a7b8c9d-0e1f-4a2b-9c3d-4e5f6a7b8c90",
-      "name": "BigQuery - Usuário da Placa",
-      "type": "n8n-nodes-base.googleBigQuery",
-      "typeVersion": 2,
-      "position": [
-        1210.0,
-        1980
-      ],
-      "credentials": {
-        "googleBigQueryOAuth2Api": {
-          "id": "fEvX6CLoEoQBCMyd",
-          "name": "Google BigQuery - leonardo.fava@mottu.com.br"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "url": "https://facematch.mottu.cloud/api/v2/Facematch/search",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "oAuth2Api",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "UserId",
-              "value": "={{ $('BigQuery - Usuário da Placa').first().json.usuarioId }}"
-            },
-            {
-              "name": "PageNumber",
-              "value": "1"
-            },
-            {
-              "name": "PageSize",
-              "value": "100"
-            },
-            {
-              "name": "DateRange",
-              "value": "={{ $('BigQuery - Usuário da Placa').first().json.facematch_inicio + ',' + $('BigQuery - Usuário da Placa').first().json.fim }}"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.4,
-      "position": [
-        1430.0,
-        1980
-      ],
-      "id": "9d0e1f2a-3b4c-4d5e-8f6a-7b8c9d0e1f23",
-      "name": "HTTP - FaceMatch",
-      "executeOnce": true,
-      "alwaysOutputData": true,
-      "onError": "continueRegularOutput",
-      "credentials": {
-        "oAuth2Api": {
-          "id": "g9tmffmisM5yKM8e",
-          "name": "n8n-controle-de-frota-carteira-recops-sp-atualizacao-diaria-grupo-a-backend-client"
-        }
-      },
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 5000
-    },
-    {
-      "parameters": {
-        "jsCode": "const blocos = $('HTTP - FaceMatch').all()\n  .map(i => i.json)\n  .flatMap(r => (r && r.result && Array.isArray(r.result.data)) ? r.result.data : []);\n\nconst tentativas = blocos.flatMap(b => [\n  ...(Array.isArray(b.individualItems) ? b.individualItems : []),\n  ...(Array.isArray(b.groupedItems) ? b.groupedItems.flatMap(g => Array.isArray(g.items) ? g.items : []) : [])\n]);\n\nconst doisDigitos = (n) => String(n).padStart(2, '0');\nconst horarioSP = (valor) => {\n  const s = String(valor || '');\n  const temFuso = /([zZ]|[+-]\\d{2}:?\\d{2})$/.test(s);\n  const d = new Date(temFuso ? s : s + 'Z');\n  if (isNaN(d.getTime())) return null;\n  return new Date(d.getTime() - (temFuso ? 3 * 3600000 : 0));\n};\nconst dataHora = (d) => `${doisDigitos(d.getUTCDate())}/${doisDigitos(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${doisDigitos(d.getUTCHours())}:${doisDigitos(d.getUTCMinutes())}`;\n\nconst vistos = new Set();\nreturn tentativas\n  .filter(t => {\n    if (!t || t.latitude == null || t.longitude == null || Number(t.latitude) === 0 || Number(t.longitude) === 0) return false;\n    const k = t.id || `${t.createdAt}|${t.latitude}|${t.longitude}`;\n    if (vistos.has(k)) return false;\n    vistos.add(k);\n    return horarioSP(t.createdAt) !== null;\n  })\n  .map(t => ({ t, quando: horarioSP(t.createdAt) }))\n  .sort((a, b) => b.quando - a.quando)\n  .map(({ t, quando }) => {\n    const sucesso = t.success === true || t.success === 'true';\n    const foto = t.photoUrl || t.selfieUrl || t.urlImage || '';\n    const data = dataHora(quando);\n    return {\n      json: {\n        endereco: `${sucesso ? '✅' : '❌'} FaceMatch - ${data}`,\n        latitude: t.latitude,\n        longitude: t.longitude,\n        descricao: [\n          '<![CDATA[',\n          `<img src=\"${String(foto).replace(/&/g, '&amp;').replace(/\"/g, '&quot;')}\" width=\"300\"/><br/><br/>`,\n          `<b>Data:</b> ${data}<br/>`,\n          `<b>📍 <a href=\"https://www.google.com/maps?q=${t.latitude},${t.longitude}\">Abrir no Maps</a></b><br/>`,\n          sucesso ? '<br/><b>👤✅ ÊXITO NO FACEMATCH 👤✅</b>' : '<b>⚠️ Falha de FaceMatch</b>',\n          ']]>'\n        ].join('')\n      }\n    };\n  });"
-      },
-      "id": "0e1f2a3b-4c5d-4e6f-9a7b-8c9d0e1f2a34",
-      "name": "Code - FaceMatch",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1650.0,
-        1980
-      ]
-    },
-    {
-      "parameters": {
-        "content": "## 🧹 Limpeza diária\nApaga do Drive os KMLs e as fotos do CBD com mais de 3 dias",
-        "height": 380,
-        "width": 680,
-        "color": 4
-      },
-      "type": "n8n-nodes-base.stickyNote",
-      "position": [
-        -60,
-        -110
-      ],
-      "typeVersion": 1,
-      "id": "62b93e2e-bdc7-47d0-8abc-39fa6de1f938",
-      "name": "Sticky Note"
-    },
-    {
-      "parameters": {
-        "content": "## 🔎 Entrada\nValida a placa (Mercosul ou espanhola) e devolve o KML dos últimos 3 dias, se já existir",
-        "height": 200,
-        "width": 1120,
-        "color": 7
-      },
-      "type": "n8n-nodes-base.stickyNote",
-      "position": [
-        -60,
-        430
-      ],
-      "typeVersion": 1,
-      "id": "7d2d33ce-1add-4f68-a873-ae66ea636c81",
-      "name": "Sticky Note1"
-    },
-    {
-      "parameters": {
-        "content": "## 🗺️ Fontes do mapa\nBigQuery (cred. Leonardo Fava) + endpoints CarBigData e FaceMatch",
-        "height": 1640,
-        "width": 1560.0,
-        "color": 6
-      },
-      "type": "n8n-nodes-base.stickyNote",
-      "position": [
-        1150.0,
-        790
-      ],
-      "typeVersion": 1,
-      "id": "2349d7d2-a7b1-407f-8987-13d85a76dc7d",
-      "name": "Sticky Note2"
-    },
-    {
-      "parameters": {
-        "content": "## 📦 Monta o KML\nJunta as camadas, sobe no Drive e deixa público",
-        "height": 200,
-        "width": 1340,
-        "color": 5
-      },
-      "type": "n8n-nodes-base.stickyNote",
-      "position": [
-        2800,
-        1510
-      ],
-      "typeVersion": 1,
-      "id": "cc76efac-a53c-4b1a-a335-7c32aaab162e",
-      "name": "Sticky Note3"
-    },
-    {
-      "parameters": {
-        "content": "## ✅ Resposta\nPágina de mapa gerado ou já existente",
-        "height": 200,
-        "width": 680.0,
-        "color": 3
-      },
-      "type": "n8n-nodes-base.stickyNote",
-      "position": [
-        4230.0,
-        430
-      ],
-      "typeVersion": 1,
-      "id": "63c38272-b187-41a0-b2cb-6b196039e164",
-      "name": "Sticky Note5"
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RecOps · MyMaps</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Barlow:ital,wght@0,700;0,800;1,600;1,700;1,800&family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@24,400,0,0" rel="stylesheet">
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' fill='%23131510'/%3E%3Cpath d='M6 6 L34 6 L34 25 Q20 36 20 36 Q20 36 6 25 Z' fill='%230e100d' stroke='%23424943' stroke-width='1'/%3E%3Cpath d='M6 6 L34 6 L34 11 L6 11 Z' fill='%2300b131'/%3E%3Ccircle cx='20' cy='21' r='7' stroke='%2300b131' stroke-width='1' opacity='0.4' fill='none'/%3E%3Ccircle cx='20' cy='21' r='3.5' stroke='%2300b131' stroke-width='1' opacity='0.7' fill='none'/%3E%3Cline x1='20' y1='12' x2='20' y2='15.5' stroke='%2300b131' stroke-width='1' opacity='0.8'/%3E%3Cline x1='20' y1='26.5' x2='20' y2='30' stroke='%2300b131' stroke-width='1' opacity='0.8'/%3E%3Cline x1='11' y1='21' x2='14.5' y2='21' stroke='%2300b131' stroke-width='1' opacity='0.8'/%3E%3Cline x1='25.5' y1='21' x2='29' y2='21' stroke='%2300b131' stroke-width='1' opacity='0.8'/%3E%3Ccircle cx='20' cy='21' r='1.8' fill='%2300b131'/%3E%3C/svg%3E">
+  <style>
+    :root {
+      --color-primary: #00b131;
+      --color-background: #131510;
+      --color-surface: #1a1c19;
+      --color-outline-variant: #424943;
+      --color-on-surface: #e2e3de;
+      --color-on-surface-var: #969e99;
+      --color-error: #ffb4ab;
+      --color-amber: #d97706;
+      --font-brand: 'Barlow', sans-serif;
+      --font-plain: 'Poppins', sans-serif;
     }
-  ],
-  "connections": {
-    "Schedule - Limpeza Semanal": {
-      "main": [
-        [
-          {
-            "node": "Google Drive - Lista KMLs Expirados",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Google Drive - Lista Fotos Expiradas",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Google Drive - Lista KMLs Expirados": {
-      "main": [
-        [
-          {
-            "node": "Google Drive - Deleta KML",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Google Drive - Lista Fotos Expiradas": {
-      "main": [
-        [
-          {
-            "node": "Google Drive - Deleta Foto CBD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Verifica se Já Existe": {
-      "main": [
-        [
-          {
-            "node": "IF - Já Existe?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "IF - Já Existe?": {
-      "main": [
-        [
-          {
-            "node": "Code - Retorna Link Existente",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "BigQuery - Telemetria App",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "BigQuery - Usuário da Placa",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "BigQuery - Endereços Principais",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "BigQuery - Endereços Fracos",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "BigQuery - Endereços Lemit",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "BigQuery -Recusas",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "BigQuery -Multas",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "BigQuery - Aparelho Compartilhado",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Retorna Link Existente": {
-      "main": [
-        [
-          {
-            "node": "Merge - Consolida Resultado",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "BigQuery - Telemetria App": {
-      "main": [
-        [
-          {
-            "node": "Merge - Sincroniza BQs",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "BigQuery - Usuário da Placa": {
-      "main": [
-        [
-          {
-            "node": "HTTP - FaceMatch",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - FaceMatch": {
-      "main": [
-        [
-          {
-            "node": "Code - FaceMatch",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - FaceMatch": {
-      "main": [
-        [
-          {
-            "node": "Merge - Sincroniza BQs",
-            "type": "main",
-            "index": 6
-          }
-        ]
-      ]
-    },
-    "BigQuery - Endereços Principais": {
-      "main": [
-        [
-          {
-            "node": "Merge - Sincroniza BQs",
-            "type": "main",
-            "index": 1
-          },
-          {
-            "node": "HTTP - Imagens CBD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Merge - Sincroniza BQs": {
-      "main": [
-        [
-          {
-            "node": "Code - Gera KML",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Gera KML": {
-      "main": [
-        [
-          {
-            "node": "Code - Prepara Upload",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Prepara Upload": {
-      "main": [
-        [
-          {
-            "node": "Google Drive - Upload KML",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Google Drive - Upload KML": {
-      "main": [
-        [
-          {
-            "node": "Google Drive - Torna Público",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Google Drive - Torna Público": {
-      "main": [
-        [
-          {
-            "node": "Code - Monta Links",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Merge - Consolida Resultado": {
-      "main": [
-        [
-          {
-            "node": "Code - Prepara Resposta",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Prepara Resposta": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook1",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Code - Extrai Placa",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
-    },
-    "BigQuery - Endereços Lemit": {
-      "main": [
-        [
-          {
-            "node": "Merge - Sincroniza BQs",
-            "type": "main",
-            "index": 3
-          }
-        ]
-      ]
-    },
-    "BigQuery - Endereços Fracos": {
-      "main": [
-        [
-          {
-            "node": "Merge - Sincroniza BQs",
-            "type": "main",
-            "index": 2
-          }
-        ]
-      ]
-    },
-    "BigQuery -Recusas": {
-      "main": [
-        [
-          {
-            "node": "Merge - Sincroniza BQs",
-            "type": "main",
-            "index": 4
-          }
-        ]
-      ]
-    },
-    "BigQuery -Multas": {
-      "main": [
-        [
-          {
-            "node": "If - Existe multa ?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP Request": {
-      "main": [
-        [
-          {
-            "node": "Code - BQ + Geocod",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - BQ + Geocod": {
-      "main": [
-        []
-      ]
-    },
-    "If - Existe multa ?": {
-      "main": [
-        [
-          {
-            "node": "HTTP Request",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        []
-      ]
-    },
-    "HTTP - Imagens CBD": {
-      "main": [
-        [
-          {
-            "node": "Code - Seleciona Foto CBD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Seleciona Foto CBD": {
-      "main": [
-        [
-          {
-            "node": "HTTP - Baixa Foto CBD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP - Baixa Foto CBD": {
-      "main": [
-        [
-          {
-            "node": "Google Drive - Upload Foto CBD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Google Drive - Upload Foto CBD": {
-      "main": [
-        [
-          {
-            "node": "Google Drive - Torna Foto Pública",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Google Drive - Torna Foto Pública": {
-      "main": [
-        [
-          {
-            "node": "Code - Anexa Foto CBD",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Anexa Foto CBD": {
-      "main": [
-        [
-          {
-            "node": "Merge - Sincroniza BQs",
-            "type": "main",
-            "index": 5
-          }
-        ]
-      ]
-    },
-    "BigQuery - Aparelho Compartilhado": {
-      "main": [
-        [
-          {
-            "node": "Merge - Sincroniza BQs",
-            "type": "main",
-            "index": 7
-          }
-        ]
-      ]
-    },
-    "Code - Extrai Placa": {
-      "main": [
-        [
-          {
-            "node": "Google Drive - Busca KML Existente",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Google Drive - Busca KML Existente": {
-      "main": [
-        [
-          {
-            "node": "Code - Verifica se Já Existe",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Code - Monta Links": {
-      "main": [
-        [
-          {
-            "node": "Merge - Consolida Resultado",
-            "type": "main",
-            "index": 1
-          }
-        ]
-      ]
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-plain); background: var(--color-background); color: var(--color-on-surface); min-height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
+    @keyframes fadeUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes ping-trail { 0% { transform: translate(-50%,-50%) scale(0); opacity: 0.7; } 100% { transform: translate(-50%,-50%) scale(3); opacity: 0; } }
+    @keyframes draw-line { from { stroke-dashoffset: 120; } to { stroke-dashoffset: 0; } }
+    @keyframes successPulse  { 0%{transform:scale(0.8);opacity:.6} 100%{transform:scale(1.7);opacity:0} }
+    @keyframes existingPulse { 0%{transform:scale(0.8);opacity:.6} 100%{transform:scale(1.7);opacity:0} }
+    @keyframes errorPulse    { 0%{transform:scale(0.8);opacity:.6} 100%{transform:scale(1.7);opacity:0} }
+    header { padding: 16px 32px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid var(--color-outline-variant); }
+    main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 20px; }
+    .container { width: 100%; max-width: 460px; }
+    footer { padding: 18px 32px; border-top: 1px solid var(--color-outline-variant); text-align: center; font-size: 11px; color: var(--color-on-surface-var); opacity: 0.5; }
+    footer span { color: var(--color-primary); opacity: 1; }
+    .card { background: var(--color-surface); border: 1px solid var(--color-outline-variant); border-radius: 16px; overflow: hidden; position: relative; animation: fadeUp 0.5s ease both; }
+    .card-top-bar { height: 3px; }
+    .card-hero { padding: 36px 40px 28px; text-align: center; border-bottom: 1px solid var(--color-outline-variant); }
+    .icon-wrap { position: relative; width: 80px; height: 80px; margin: 0 auto 24px; }
+    .icon-ring { position: absolute; inset: -8px; border-radius: 50%; border: 1.5px solid; opacity: 0; }
+    .icon-ring.green { border-color: var(--color-primary); animation: successPulse 2s ease-out infinite; }
+    .icon-ring.amber { border-color: var(--color-amber); animation: existingPulse 2s ease-out infinite; }
+    .icon-ring.red   { border-color: var(--color-error); animation: errorPulse 2s ease-out infinite; }
+    .icon-circle { width: 80px; height: 80px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1.5px solid; }
+    .icon-circle.green { background: rgba(0,177,49,0.1); border-color: var(--color-primary); }
+    .icon-circle.amber { background: rgba(217,119,6,0.1); border-color: var(--color-amber); }
+    .icon-circle.red   { background: rgba(255,180,171,0.08); border-color: var(--color-error); }
+    .icon-circle .material-symbols-rounded { font-size: 36px; }
+    .icon-circle.green .material-symbols-rounded { color: var(--color-primary); }
+    .icon-circle.amber .material-symbols-rounded { color: var(--color-amber); }
+    .icon-circle.red   .material-symbols-rounded { color: var(--color-error); }
+    .overline { font-family: var(--font-brand); font-size: 11px; font-weight: 700; font-style: italic; letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 8px; }
+    .overline.green { color: var(--color-primary); }
+    .overline.amber { color: var(--color-amber); }
+    .overline.red   { color: var(--color-error); }
+    .headline { font-family: var(--font-brand); font-size: 28px; font-weight: 800; font-style: italic; color: var(--color-on-surface); text-transform: uppercase; line-height: 1.1; }
+    .card-info { padding: 16px 40px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--color-outline-variant); }
+    .card-info .material-symbols-rounded { font-size: 18px; flex-shrink: 0; }
+    .card-info p { font-size: 13px; color: var(--color-on-surface-var); line-height: 1.5; }
+    .card-details { padding: 16px 40px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--color-outline-variant); }
+    .plate-wrap { display: flex; align-items: center; gap: 10px; }
+    .plate-wrap > .material-symbols-rounded { font-size: 18px; color: var(--color-on-surface-var); }
+    .plate-label { font-size: 10px; color: var(--color-on-surface-var); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 2px; }
+    .plate-value { font-family: var(--font-brand); font-size: 16px; font-weight: 700; font-style: italic; color: var(--color-on-surface); letter-spacing: 1.5px; }
+    .state-badge { border-radius: 32px; padding: 4px 12px; font-family: var(--font-brand); font-size: 11px; font-weight: 700; font-style: italic; letter-spacing: 1px; text-transform: uppercase; }
+    .state-badge.green { background: rgba(0,177,49,0.1); border: 1px solid rgba(0,177,49,0.25); color: var(--color-primary); }
+    .state-badge.amber { background: rgba(217,119,6,0.1); border: 1px solid rgba(217,119,6,0.25); color: var(--color-amber); }
+    .state-badge.red   { background: rgba(255,180,171,0.1); border: 1px solid rgba(255,180,171,0.2); color: var(--color-error); }
+    .card-actions { padding: 24px 40px; display: flex; flex-direction: column; gap: 10px; }
+    .btn-primary { display: flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: 4px; padding: 15px 24px; font-family: var(--font-brand); font-size: 14px; font-weight: 800; font-style: italic; text-transform: uppercase; letter-spacing: 0.5px; text-decoration: none; cursor: pointer; transition: opacity 0.2s; color: #000; }
+    .btn-primary.green { background: var(--color-primary); }
+    .btn-primary.amber { background: var(--color-amber); }
+    .btn-primary.red   { background: var(--color-error); }
+    .btn-primary:hover { opacity: 0.88; }
+    .btn-primary .material-symbols-rounded { font-size: 18px; color: #000; }
+    .btn-secondary { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; background: transparent; cursor: pointer; border: 1px solid var(--color-outline-variant); border-radius: 4px; color: var(--color-on-surface-var); padding: 12px 24px; font-family: var(--font-plain); font-size: 13px; transition: color 0.2s, border-color 0.2s; }
+    .btn-secondary:hover { color: var(--color-on-surface); border-color: var(--color-on-surface-var); }
+    .btn-secondary .material-symbols-rounded { font-size: 16px; }
+    #placa::placeholder { text-transform: none; letter-spacing: 0; font-style: normal; font-weight: 400; }
+    #mapAnim { position: relative; width: 280px; height: 180px; margin: 0 auto 28px; border-radius: 12px; background: #0e100d; border: 1px solid var(--color-outline-variant); overflow: hidden; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+<header>
+  <svg width="148" height="40" viewBox="0 0 148 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Mottu RecOps">
+    <path d="M4 4 L36 4 L36 26 Q20 36 20 36 Q20 36 4 26 Z" fill="#0e100d" stroke="#424943" stroke-width="1"/>
+    <path d="M4 4 L36 4 L36 8 L4 8 Z" fill="#00b131"/>
+    <circle cx="20" cy="19" r="7" stroke="#00b131" stroke-width="1" opacity="0.4"/>
+    <circle cx="20" cy="19" r="3.5" stroke="#00b131" stroke-width="1" opacity="0.7"/>
+    <line x1="20" y1="10" x2="20" y2="13.5" stroke="#00b131" stroke-width="1" opacity="0.6"/>
+    <line x1="20" y1="24.5" x2="20" y2="28" stroke="#00b131" stroke-width="1" opacity="0.6"/>
+    <line x1="11" y1="19" x2="14.5" y2="19" stroke="#00b131" stroke-width="1" opacity="0.6"/>
+    <line x1="25.5" y1="19" x2="29" y2="19" stroke="#00b131" stroke-width="1" opacity="0.6"/>
+    <circle cx="20" cy="19" r="1.5" fill="#00b131"/>
+    <text x="44" y="26" font-family="Barlow, sans-serif" font-size="22" font-weight="800" font-style="italic" fill="#e2e3de" letter-spacing="1">REC</text>
+    <text x="84" y="26" font-family="Barlow, sans-serif" font-size="22" font-weight="800" font-style="italic" fill="#00b131" letter-spacing="1">OPS</text>
+    <line x1="44" y1="30" x2="148" y2="30" stroke="#424943" stroke-width="0.75"/>
+    <text x="44" y="38" font-family="Barlow, sans-serif" font-size="9" font-weight="600" font-style="italic" fill="#969e99" letter-spacing="3">MOTTU</text>
+  </svg>
+  <div style="margin-left:auto; background:rgba(0,177,49,0.12); border:1px solid rgba(0,177,49,0.25); border-radius:32px; padding:4px 12px;">
+    <span style="font-family:'Barlow',sans-serif; font-size:11px; font-weight:700; font-style:italic; color:#00b131; letter-spacing:1px; text-transform:uppercase;">MyMaps</span>
+  </div>
+</header>
+<main>
+  <div class="container">
+    <!-- FORM -->
+    <div class="card" id="formCard">
+      <div class="card-top-bar" style="background:var(--color-primary);"></div>
+      <div style="padding:40px;">
+        <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
+          <span style="display:inline-block; width:16px; height:2px; background:var(--color-primary); border-radius:2px;"></span>
+          <span style="font-family:var(--font-brand); font-size:11px; font-weight:700; font-style:italic; color:var(--color-primary); letter-spacing:1.5px; text-transform:uppercase;">Recuperação de Veículos</span>
+        </div>
+        <h1 style="font-family:var(--font-brand); font-size:32px; font-weight:800; font-style:italic; color:var(--color-on-surface); text-transform:uppercase; line-height:1.1; margin-bottom:10px;">Solicitar mapa<br>de rastreio</h1>
+        <p style="font-size:14px; color:var(--color-on-surface-var); line-height:1.6; margin-bottom:32px;">Informe a placa da moto para gerar o arquivo KML com os pontos de localização.</p>
+        <form id="placaForm">
+          <div style="margin-bottom:20px;">
+            <label for="placa" style="display:block; font-size:12px; font-weight:600; color:var(--color-on-surface-var); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:8px;">Placa do veículo</label>
+            <div style="position:relative;">
+              <span class="material-symbols-rounded" id="fieldIcon" aria-hidden="true" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); font-size:20px; color:var(--color-on-surface-var); pointer-events:none; transition:color 0.2s;">two_wheeler</span>
+              <input type="text" id="placa" placeholder="Ex: UAX-2F98 ou 3689H5" maxlength="8" autocomplete="off" required
+                style="width:100%; background:#131510; border:1.5px solid var(--color-outline-variant); border-radius:8px; padding:14px 16px 14px 44px; font-family:var(--font-brand); font-size:17px; font-weight:700; font-style:italic; color:var(--color-on-surface); text-transform:uppercase; letter-spacing:2px; outline:none; transition:border-color 0.2s, box-shadow 0.2s; caret-color:var(--color-primary);">
+            </div>
+            <div id="fieldError" style="display:none; margin-top:8px; align-items:center; gap:6px;">
+              <span class="material-symbols-rounded" style="font-size:16px; color:var(--color-error);">error</span>
+              <span style="font-size:12px; color:var(--color-error);">Placa incompleta. Ex: UAX-2F98 ou 3689H5</span>
+            </div>
+          </div>
+          <button type="submit" class="btn-primary green" style="width:100%;">
+            <span>Gerar mapa</span>
+            <span class="material-symbols-rounded">arrow_forward</span>
+          </button>
+        </form>
+      </div>
+    </div>
+    <!-- LOADING -->
+    <div class="card hidden" id="loadingCard">
+      <canvas id="motoCanvas" style="position:absolute;inset:0;width:100%;height:100%;z-index:0;border-radius:16px;cursor:crosshair;" title="Clique no piloto!"></canvas>
+      <div class="card-top-bar" style="background:var(--color-primary);position:relative;z-index:1;"></div>
+      <div style="padding:40px;text-align:center;position:relative;z-index:1;">
+        <div id="mapAnim">
+          <svg style="position:absolute; inset:0; width:100%; height:100%;" viewBox="0 0 280 180" preserveAspectRatio="none">
+            <line x1="56"  y1="0"   x2="56"  y2="180" stroke="#424943" stroke-width="0.5" stroke-dasharray="4,4"/>
+            <line x1="112" y1="0"   x2="112" y2="180" stroke="#424943" stroke-width="0.5" stroke-dasharray="4,4"/>
+            <line x1="168" y1="0"   x2="168" y2="180" stroke="#424943" stroke-width="0.5" stroke-dasharray="4,4"/>
+            <line x1="224" y1="0"   x2="224" y2="180" stroke="#424943" stroke-width="0.5" stroke-dasharray="4,4"/>
+            <line x1="0"   y1="36"  x2="280" y2="36"  stroke="#424943" stroke-width="0.5" stroke-dasharray="4,4"/>
+            <line x1="0"   y1="72"  x2="280" y2="72"  stroke="#424943" stroke-width="0.5" stroke-dasharray="4,4"/>
+            <line x1="0"   y1="108" x2="280" y2="108" stroke="#424943" stroke-width="0.5" stroke-dasharray="4,4"/>
+            <line x1="0"   y1="144" x2="280" y2="144" stroke="#424943" stroke-width="0.5" stroke-dasharray="4,4"/>
+            <polyline id="routeLine" points="40,140 80,110 120,90 155,115 195,70 240,55" fill="none" stroke="#00b131" stroke-width="1.5" stroke-dasharray="120" stroke-dashoffset="120" stroke-linecap="round" stroke-linejoin="round" opacity="0.7"/>
+          </svg>
+          <div id="mapDots" style="position:absolute; inset:0; pointer-events:none;"></div>
+          <div id="scanLine" style="position:absolute; top:0; left:0; width:100%; height:2px; background:linear-gradient(90deg,transparent,#00b131,transparent); opacity:0.6;"></div>
+          <div style="position:absolute; top:8px; left:8px; width:12px; height:12px; border-top:1.5px solid #00b131; border-left:1.5px solid #00b131;"></div>
+          <div style="position:absolute; top:8px; right:8px; width:12px; height:12px; border-top:1.5px solid #00b131; border-right:1.5px solid #00b131;"></div>
+          <div style="position:absolute; bottom:8px; left:8px; width:12px; height:12px; border-bottom:1.5px solid #00b131; border-left:1.5px solid #00b131;"></div>
+          <div style="position:absolute; bottom:8px; right:8px; width:12px; height:12px; border-bottom:1.5px solid #00b131; border-right:1.5px solid #00b131;"></div>
+        </div>
+        <p style="font-family:var(--font-brand); font-size:20px; font-weight:800; font-style:italic; color:var(--color-on-surface); text-transform:uppercase; margin-bottom:8px;">Gerando mapa...</p>
+        <p style="font-size:13px; color:var(--color-on-surface-var);" id="loadingPlaca"></p>
+      </div>
+    </div>
+    <!-- SUCCESS -->
+    <div class="card hidden" id="resultCard">
+      <div class="card-top-bar" style="background:var(--color-primary);"></div>
+      <div class="card-hero">
+        <div class="icon-wrap"><div class="icon-ring green"></div><div class="icon-circle green"><span class="material-symbols-rounded" aria-hidden="true">check_circle</span></div></div>
+        <p class="overline green">Mapa Gerado</p>
+        <h2 class="headline">Mapa gerado<br>com sucesso</h2>
+      </div>
+      <div class="card-info" style="background:rgba(0,177,49,0.04);">
+        <span class="material-symbols-rounded" aria-hidden="true" style="color:var(--color-primary);">info</span>
+        <p>O arquivo KML foi gerado e está pronto para uso.</p>
+      </div>
+      <div class="card-details">
+        <div class="plate-wrap"><span class="material-symbols-rounded" aria-hidden="true">two_wheeler</span><div><p class="plate-label">Placa</p><p class="plate-value" id="resultPlaca">—</p></div></div>
+        <span class="state-badge green">KML Pronto</span>
+      </div>
+      <div class="card-actions">
+        <a href="#" id="kmlBtn" target="_blank" class="btn-primary green"><span class="material-symbols-rounded" aria-hidden="true">download</span>Baixar KML</a>
+        <button onclick="resetForm()" class="btn-secondary"><span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>Solicitar outro mapa</button>
+      </div>
+    </div>
+    <!-- EXISTING -->
+    <div class="card hidden" id="existingCard">
+      <div class="card-top-bar" style="background:var(--color-amber);"></div>
+      <div class="card-hero">
+        <div class="icon-wrap"><div class="icon-ring amber"></div><div class="icon-circle amber"><span class="material-symbols-rounded" aria-hidden="true">recycling</span></div></div>
+        <p class="overline amber">Mapa Existente</p>
+        <h2 class="headline">Mapa já<br>existente</h2>
+      </div>
+      <div class="card-info" style="background:rgba(217,119,6,0.04);">
+        <span class="material-symbols-rounded" aria-hidden="true" style="color:var(--color-amber);">info</span>
+        <p>O mapa desta placa já estava disponível e foi recuperado.</p>
+      </div>
+      <div class="card-details">
+        <div class="plate-wrap"><span class="material-symbols-rounded" aria-hidden="true">two_wheeler</span><div><p class="plate-label">Placa</p><p class="plate-value" id="existingPlaca">—</p></div></div>
+        <span class="state-badge amber">Já existia</span>
+      </div>
+      <div class="card-actions">
+        <a href="#" id="existingKmlBtn" target="_blank" class="btn-primary amber"><span class="material-symbols-rounded" aria-hidden="true">download</span>Baixar KML</a>
+        <button onclick="resetForm()" class="btn-secondary"><span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>Solicitar outro mapa</button>
+      </div>
+    </div>
+    <!-- ERROR -->
+    <div class="card hidden" id="errorCard">
+      <div class="card-top-bar" style="background:var(--color-error);"></div>
+      <div class="card-hero">
+        <div class="icon-wrap"><div class="icon-ring red"></div><div class="icon-circle red"><span class="material-symbols-rounded" aria-hidden="true">warning</span></div></div>
+        <p class="overline red">Recuperação de Veículos</p>
+        <h2 class="headline">Falha ao gerar<br>o mapa</h2>
+      </div>
+      <div class="card-info" style="background:rgba(255,180,171,0.04);">
+        <span class="material-symbols-rounded" aria-hidden="true" style="color:var(--color-error);">info</span>
+        <p id="errorDescription">Não foi possível conectar ao servidor.</p>
+      </div>
+      <div class="card-details">
+        <div class="plate-wrap"><span class="material-symbols-rounded" aria-hidden="true">two_wheeler</span><div><p class="plate-label">Placa solicitada</p><p class="plate-value" id="errorPlaca">—</p></div></div>
+        <span class="state-badge red">Erro</span>
+      </div>
+      <div class="card-actions">
+        <button id="retryBtn" class="btn-primary red" style="width:100%;"><span class="material-symbols-rounded" aria-hidden="true">refresh</span>Tentar novamente</button>
+        <button onclick="resetForm()" class="btn-secondary"><span class="material-symbols-rounded" aria-hidden="true">arrow_back</span>Solicitar outro mapa</button>
+      </div>
+    </div>
+  </div>
+</main>
+<footer>Mottu RecOps · <span>MyMaps Automation</span> · Powered by N8N</footer>
+<script>
+(function () {
+  const WEBHOOK_BASE = 'https://webhook-n8n-int.mottu.io/webhook/solicitar-mymaps';
+  const allDotPositions = [
+    {x:14,y:50},{x:28,y:40},{x:43,y:32},{x:55,y:41},{x:70,y:25},
+    {x:85,y:20},{x:30,y:60},{x:60,y:65},{x:75,y:55},{x:50,y:72},
+    {x:20,y:75},{x:65,y:80},{x:88,y:68},{x:10,y:30},{x:45,y:15},
+  ];
+  let dotTimers = [], scanAnim = null;
+  document.getElementById('placa').addEventListener('input', function (e) {
+    let v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (/^[0-9]/.test(v)) v = v.slice(0, 7);
+    else if (v.length > 3) v = v.slice(0, 3) + '-' + v.slice(3);
+    e.target.value = v;
+    validatePlate(false);
+  });
+  function validatePlate(showMsg) {
+    const input = document.getElementById('placa');
+    const raw   = input.value.replace(/-/g, '');
+    const err   = document.getElementById('fieldError');
+    const icon  = document.getElementById('fieldIcon');
+    const valid = raw.length >= (/^[0-9]/.test(raw) ? 6 : 7), empty = raw.length === 0;
+    if (!empty && !valid) {
+      input.style.borderColor = 'var(--color-error)';
+      input.style.boxShadow   = '0 0 0 3px rgba(255,180,171,0.12)';
+      icon.style.color        = 'var(--color-error)';
+      if (showMsg) err.style.display = 'flex';
+      return false;
     }
-  },
-  "pinData": {},
-  "meta": {
-    "templateCredsSetupCompleted": true,
-    "instanceId": "f9bfd7913a58339ed94413cdfeaaa6a4a41311cbddaa5e1bcb682aea3b33d7c5"
+    input.style.borderColor = empty ? 'var(--color-outline-variant)' : 'var(--color-primary)';
+    input.style.boxShadow   = empty ? 'none' : '0 0 0 3px rgba(0,177,49,0.1)';
+    icon.style.color        = empty ? 'var(--color-on-surface-var)' : 'var(--color-primary)';
+    err.style.display = 'none';
+    return true;
   }
-}
+  var _redirectTimer = null;
+  var _pendingUrl = '';
+  function scheduleRedirect(url, delay) {
+    if (_redirectTimer) clearTimeout(_redirectTimer);
+    _pendingUrl = url;
+    _redirectTimer = setTimeout(function() { window.location.href = url; }, delay);
+  }
+  window._extendRedirect = function() {
+    // Desabilitado — não interfere no redirect para não atrasar o fluxo N8N
+  };
+  document.getElementById('placaForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const placa = document.getElementById('placa').value.trim().toUpperCase();
+    if (!validatePlate(true)) return;
+    const kmlUrl = WEBHOOK_BASE + '?Placa=' + encodeURIComponent(placa);
+    showLoading(placa);
+    scheduleRedirect(kmlUrl, 100);
+  });
+  function startMapAnimation() {
+    const container = document.getElementById('mapDots');
+    container.innerHTML = '';
+    dotTimers.forEach(clearTimeout); dotTimers = [];
+    const scanLine = document.getElementById('scanLine');
+    let scanY = 0, scanDir = 1;
+    if (scanAnim) cancelAnimationFrame(scanAnim);
+    (function tick() {
+      scanY += 0.6 * scanDir;
+      if (scanY >= 100) scanDir = -1; if (scanY <= 0) scanDir = 1;
+      scanLine.style.top = scanY + '%';
+      scanAnim = requestAnimationFrame(tick);
+    })();
+    const rl = document.getElementById('routeLine');
+    rl.style.animation = 'none'; void rl.offsetWidth;
+    rl.style.animation = 'draw-line 2s ease forwards 0.5s';
+    allDotPositions.forEach(function (pos, i) {
+      const t = setTimeout(function () {
+        const dot = document.createElement('div');
+        dot.style.cssText = 'position:absolute;left:'+pos.x+'%;top:'+pos.y+'%;width:6px;height:6px;border-radius:50%;background:#00b131;transform:translate(-50%,-50%) scale(0);transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1);box-shadow:0 0 6px rgba(0,177,49,0.6)';
+        container.appendChild(dot);
+        setTimeout(function () { dot.style.transform = 'translate(-50%,-50%) scale(1)'; }, 20);
+        const rp = document.createElement('div');
+        rp.style.cssText = 'position:absolute;left:'+pos.x+'%;top:'+pos.y+'%;width:6px;height:6px;border-radius:50%;border:1px solid #00b131;transform:translate(-50%,-50%) scale(0);animation:ping-trail 1.6s ease-out infinite;animation-delay:'+(i*0.1)+'s;opacity:0.5';
+        container.appendChild(rp);
+      }, 200 + i * 120);
+      dotTimers.push(t);
+    });
+  }
+  function stopMapAnimation() {
+    if (scanAnim) cancelAnimationFrame(scanAnim);
+    dotTimers.forEach(clearTimeout); dotTimers = [];
+  }
+  function hideAll() {
+    ['formCard','loadingCard','resultCard','existingCard','errorCard'].forEach(function (id) {
+      document.getElementById(id).classList.add('hidden');
+    });
+  }
+  function showCard(id) {
+    const el = document.getElementById(id);
+    el.classList.remove('hidden');
+    el.style.animation = 'none'; void el.offsetWidth;
+    el.style.animation = 'fadeUp 0.5s ease both';
+  }
+  function showLoading(placa) {
+    hideAll();
+    document.getElementById('loadingPlaca').textContent = 'Placa: ' + placa;
+    showCard('loadingCard');
+    startMapAnimation();
+    if (window._startMotoAnim) window._startMotoAnim();
+  }
+  window.resetForm = function () {
+    stopMapAnimation();
+    if (window._stopMotoAnim) window._stopMotoAnim();
+    hideAll(); showCard('formCard');
+    const input = document.getElementById('placa');
+    input.value = '';
+    input.style.borderColor = 'var(--color-outline-variant)';
+    input.style.boxShadow   = 'none';
+    document.getElementById('fieldIcon').style.color = 'var(--color-on-surface-var)';
+    document.getElementById('fieldError').style.display = 'none';
+  };
+  window.addEventListener('pageshow', function () { resetForm(); });
+
+  // ── Auto-preenchimento via ?placa= (adicionado em 2026-08-21, a pedido do Jonata) ──────────
+  // O botão "Criar MyMaps" do dashboard Carteira RecOps abre esta página como
+  // ".../?placa=ABC-1234". Este listener roda DEPOIS do listener de pageshow acima (mesma ordem
+  // de registro = mesma ordem de execução), ou seja, depois que resetForm() já limpou o campo —
+  // por isso ele não zera o valor que acabamos de preencher. Aceita tanto "placa" (é o que o
+  // dashboard envia) quanto "Placa" (maiúsculo, só por robustez, já que o webhook do N8N usa
+  // "Placa" em outro contexto neste mesmo arquivo).
+  window.addEventListener('pageshow', function () {
+    const params = new URLSearchParams(window.location.search);
+    let placa = params.get('placa') || params.get('Placa');
+    if (!placa) return;
+    placa = placa.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (/^[0-9]/.test(placa)) placa = placa.slice(0, 7);
+    else if (placa.length > 3) placa = placa.slice(0, 3) + '-' + placa.slice(3);
+    document.getElementById('placa').value = placa;
+    validatePlate(false);
+  });
+})();
+// ── Moto Easter Egg Animation (Sprite-based) ──────────────────
+(function() {
+  var canvas, ctx, W, H, animId = null;
+  var moto = {};
+  var sprites = {};
+  var SPRITE_SIZE = 100;
+  var SPRITE_FILES = {
+    riding:   'sprites/moto-riding.png',
+    motoOnly: 'sprites/moto-alone.png',
+    flying:   'sprites/rider-flying.png',
+    fallen:   'sprites/rider-fallen.png',
+    running:  'sprites/rider-running.png'
+  };
+  var ANCHORS = {
+    riding:   [0.50, 0.82],
+    motoOnly: [0.50, 0.80],
+    flying:   [0.58, 0.46],
+    fallen:   [0.52, 0.70],
+    running:  [0.47, 0.82]
+  };
+  function stripBlack(img) {
+    var sz = SPRITE_SIZE;
+    var c = document.createElement('canvas');
+    c.width = c.height = sz;
+    var cx = c.getContext('2d');
+    cx.drawImage(img, 0, 0, sz, sz);
+    var d = cx.getImageData(0, 0, sz, sz);
+    var px = d.data;
+    for (var i = 0; i < px.length; i += 4) {
+      var lum = (px[i]*299 + px[i+1]*587 + px[i+2]*114) / 1000;
+      if (lum < 20) px[i+3] = 0;
+    }
+    cx.putImageData(d, 0, 0);
+    return c;
+  }
+  function loadSprites(onDone) {
+    var keys = Object.keys(SPRITE_FILES);
+    var remaining = keys.length;
+    keys.forEach(function(k) {
+      var img = new Image();
+      img.onload  = function() { sprites[k] = stripBlack(img); if (!--remaining) onDone(); };
+      img.onerror = function() { if (!--remaining) onDone(); };
+      img.src = SPRITE_FILES[k];
+    });
+  }
+  function drawSprite(key, wx, wy, flip) {
+    var s = sprites[key]; if (!s) return;
+    var an = ANCHORS[key]; var sz = SPRITE_SIZE;
+    ctx.save();
+    ctx.translate(wx, wy);
+    if (flip) ctx.scale(-1, 1);
+    ctx.drawImage(s, -an[0]*sz, -an[1]*sz, sz, sz);
+    ctx.restore();
+  }
+  function init() {
+    canvas = document.getElementById('motoCanvas');
+    if (!canvas) return;
+    ctx = canvas.getContext('2d');
+    resize();
+    canvas.addEventListener('click', onCanvasClick);
+  }
+  function resize() {
+    W = canvas.offsetWidth || 460;
+    H = canvas.offsetHeight || 320;
+    canvas.width = W;
+    canvas.height = H;
+  }
+  function reset() {
+    resize();
+    moto = {
+      x: W/2, y: H - 28, vx: 2.2, vy: 0, dir: 1,
+      state: 'riding', riderX: 0, riderY: 0,
+      riderVX: 0, riderVY: 0, riderDir: 1,
+      stateTimer: 0, changeTimer: 80 + Math.random()*100, hintAlpha: 1.0,
+    };
+  }
+  function update() {
+    if (moto.state === 'riding') {
+      moto.x += moto.vx; moto.y += moto.vy;
+      var mg = 55;
+      if (moto.x < mg)   { moto.x = mg;   moto.vx =  Math.abs(moto.vx); moto.dir = 1; }
+      if (moto.x > W-mg) { moto.x = W-mg; moto.vx = -Math.abs(moto.vx); moto.dir = -1; }
+      if (moto.y < 155)  { moto.y = 155;  moto.vy =  Math.abs(moto.vy); }
+      if (moto.y > H-20) { moto.y = H-20; moto.vy = -Math.abs(moto.vy); }
+      if (--moto.changeTimer <= 0) {
+        moto.changeTimer = 80 + Math.random()*120;
+        var a = Math.random()*Math.PI*2, spd = 1.8 + Math.random()*1.8;
+        moto.vx = Math.cos(a)*spd; moto.vy = Math.sin(a)*spd*0.3;
+        moto.dir = moto.vx >= 0 ? 1 : -1;
+      }
+    } else if (moto.state === 'wipeout') {
+      moto.x += moto.vx*0.5; moto.vx *= 0.94;
+      moto.riderX += moto.riderVX; moto.riderY += moto.riderVY; moto.riderVY += 0.5;
+      if (moto.riderY >= H - 58) {
+        moto.riderY = H - 58; moto.riderVY *= -0.15; moto.riderVX *= 0.2;
+        moto.state = 'fallen'; moto.stateTimer = 150;
+      }
+    } else if (moto.state === 'fallen') {
+      moto.vx *= 0.88; moto.x += moto.vx * 0.2;
+      if (--moto.stateTimer <= 0) moto.state = 'recovering';
+    } else if (moto.state === 'recovering') {
+      var dx = moto.x - moto.riderX;
+      moto.riderDir = dx > 0 ? 1 : -1;
+      moto.riderX += moto.riderDir * 3.5;
+      if (Math.abs(dx) < 10) {
+        moto.state = 'riding';
+        moto.vx = moto.dir * (1.8 + Math.random()*1.5);
+        moto.vy = (Math.random()-0.5) * 0.6;
+        moto.changeTimer = 80 + Math.random()*100;
+      }
+    }
+  }
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    var flip = moto.dir === -1;
+    if (moto.state === 'riding')      { drawSprite('riding',   moto.x, moto.y, flip); }
+    else if (moto.state === 'wipeout')    { drawSprite('motoOnly', moto.x, moto.y, flip); drawSprite('flying',  moto.riderX, moto.riderY, flip); }
+    else if (moto.state === 'fallen')     { drawSprite('motoOnly', moto.x, moto.y, flip); drawSprite('fallen',  moto.riderX, moto.riderY, false); }
+    else if (moto.state === 'recovering') { drawSprite('motoOnly', moto.x, moto.y, flip); drawSprite('running', moto.riderX, moto.riderY, moto.riderDir === -1); }
+    if (moto.hintAlpha > 0) {
+      moto.hintAlpha -= 0.003;
+      ctx.save(); ctx.globalAlpha = Math.max(0, moto.hintAlpha);
+      ctx.fillStyle = '#969e99'; ctx.font = '10px Poppins,sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('Clique no piloto!', W/2, H - 6); ctx.restore();
+    }
+  }
+  function tick() { update(); draw(); animId = requestAnimationFrame(tick); }
+  function triggerWipeout() {
+    if (moto.state !== 'riding') return;
+    moto.state = 'wipeout';
+    moto.riderX = moto.x; moto.riderY = moto.y - 60;
+    moto.riderVX = moto.dir * (4 + Math.random()*3);
+    moto.riderVY = -(7 + Math.random()*3);
+  }
+  function onCanvasClick() { triggerWipeout(); }
+  document.addEventListener('keydown', function(e) {
+    if ((e.key === 'm' || e.key === 'M') && animId) triggerWipeout();
+  });
+  window._startMotoAnim = function() {
+    if (!canvas) init(); reset();
+    if (animId) cancelAnimationFrame(animId);
+    if (Object.keys(sprites).length > 0) { tick(); }
+    else { loadSprites(function() { tick(); }); }
+  };
+  window._stopMotoAnim = function() {
+    if (animId) { cancelAnimationFrame(animId); animId = null; }
+    if (ctx) ctx.clearRect(0, 0, W||460, H||320);
+  };
+  init();
+  loadSprites(function() {});
+})();
+</script>
+</body>
+</html>
