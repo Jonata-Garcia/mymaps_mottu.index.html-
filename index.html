@@ -81,6 +81,10 @@
     #placa::placeholder { text-transform: none; letter-spacing: 0; font-style: normal; font-weight: 400; }
     #mapAnim { position: relative; width: 280px; height: 180px; margin: 0 auto 28px; border-radius: 12px; background: #0e100d; border: 1px solid var(--color-outline-variant); overflow: hidden; }
     .hidden { display: none !important; }
+    .lang-toggle { display: inline-flex; border: 1px solid var(--color-outline-variant); border-radius: 32px; overflow: hidden; margin-left: 8px; }
+    .lang-toggle button { background: transparent; border: none; color: var(--color-on-surface-var); font-family: var(--font-brand); font-size: 11px; font-weight: 700; font-style: italic; letter-spacing: 1px; padding: 5px 10px; cursor: pointer; transition: background 0.2s, color 0.2s; }
+    .lang-toggle button[aria-pressed="true"] { background: var(--color-primary); color: #000; }
+    .lang-toggle button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: -2px; }
   </style>
 </head>
 <body>
@@ -103,6 +107,10 @@
   <div style="margin-left:auto; background:rgba(0,177,49,0.12); border:1px solid rgba(0,177,49,0.25); border-radius:32px; padding:4px 12px;">
     <span style="font-family:'Barlow',sans-serif; font-size:11px; font-weight:700; font-style:italic; color:#00b131; letter-spacing:1px; text-transform:uppercase;">MyMaps</span>
   </div>
+  <div class="lang-toggle" role="group" aria-label="Idioma do mapa">
+    <button type="button" data-lang="pt" aria-pressed="true">PT</button>
+    <button type="button" data-lang="es" aria-pressed="false">ES</button>
+  </div>
 </header>
 <main>
   <div class="container">
@@ -112,13 +120,13 @@
       <div style="padding:40px;">
         <div style="display:flex; align-items:center; gap:8px; margin-bottom:14px;">
           <span style="display:inline-block; width:16px; height:2px; background:var(--color-primary); border-radius:2px;"></span>
-          <span style="font-family:var(--font-brand); font-size:11px; font-weight:700; font-style:italic; color:var(--color-primary); letter-spacing:1.5px; text-transform:uppercase;">Recuperação de Veículos</span>
+          <span style="font-family:var(--font-brand); font-size:11px; font-weight:700; font-style:italic; color:var(--color-primary); letter-spacing:1.5px; text-transform:uppercase;" data-i18n="overline">Recuperação de Veículos</span>
         </div>
-        <h1 style="font-family:var(--font-brand); font-size:32px; font-weight:800; font-style:italic; color:var(--color-on-surface); text-transform:uppercase; line-height:1.1; margin-bottom:10px;">Solicitar mapa<br>de rastreio</h1>
-        <p style="font-size:14px; color:var(--color-on-surface-var); line-height:1.6; margin-bottom:32px;">Informe a placa da moto para gerar o arquivo KML com os pontos de localização.</p>
+        <h1 style="font-family:var(--font-brand); font-size:32px; font-weight:800; font-style:italic; color:var(--color-on-surface); text-transform:uppercase; line-height:1.1; margin-bottom:10px;" data-i18n-html="titulo">Solicitar mapa<br>de rastreio</h1>
+        <p style="font-size:14px; color:var(--color-on-surface-var); line-height:1.6; margin-bottom:32px;" data-i18n="descricao">Informe a placa da moto para gerar o arquivo KML com os pontos de localização.</p>
         <form id="placaForm">
           <div style="margin-bottom:20px;">
-            <label for="placa" style="display:block; font-size:12px; font-weight:600; color:var(--color-on-surface-var); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:8px;">Placa do veículo</label>
+            <label for="placa" style="display:block; font-size:12px; font-weight:600; color:var(--color-on-surface-var); text-transform:uppercase; letter-spacing:0.8px; margin-bottom:8px;" data-i18n="label">Placa do veículo</label>
             <div style="position:relative;">
               <span class="material-symbols-rounded" id="fieldIcon" aria-hidden="true" style="position:absolute; left:14px; top:50%; transform:translateY(-50%); font-size:20px; color:var(--color-on-surface-var); pointer-events:none; transition:color 0.2s;">two_wheeler</span>
               <input type="text" id="placa" placeholder="Ex: UAX-2F98 ou 3689H5" maxlength="8" autocomplete="off" required
@@ -126,11 +134,11 @@
             </div>
             <div id="fieldError" style="display:none; margin-top:8px; align-items:center; gap:6px;">
               <span class="material-symbols-rounded" style="font-size:16px; color:var(--color-error);">error</span>
-              <span style="font-size:12px; color:var(--color-error);">Placa incompleta. Ex: UAX-2F98 ou 3689H5</span>
+              <span style="font-size:12px; color:var(--color-error);" data-i18n="erro">Placa incompleta. Ex: UAX-2F98 ou 3689H5</span>
             </div>
           </div>
           <button type="submit" class="btn-primary green" style="width:100%;">
-            <span>Gerar mapa</span>
+            <span data-i18n="gerar">Gerar mapa</span>
             <span class="material-symbols-rounded">arrow_forward</span>
           </button>
         </form>
@@ -160,7 +168,7 @@
           <div style="position:absolute; bottom:8px; left:8px; width:12px; height:12px; border-bottom:1.5px solid #00b131; border-left:1.5px solid #00b131;"></div>
           <div style="position:absolute; bottom:8px; right:8px; width:12px; height:12px; border-bottom:1.5px solid #00b131; border-right:1.5px solid #00b131;"></div>
         </div>
-        <p style="font-family:var(--font-brand); font-size:20px; font-weight:800; font-style:italic; color:var(--color-on-surface); text-transform:uppercase; margin-bottom:8px;">Gerando mapa...</p>
+        <p style="font-family:var(--font-brand); font-size:20px; font-weight:800; font-style:italic; color:var(--color-on-surface); text-transform:uppercase; margin-bottom:8px;" data-i18n="gerando">Gerando mapa...</p>
         <p style="font-size:13px; color:var(--color-on-surface-var);" id="loadingPlaca"></p>
       </div>
     </div>
@@ -239,11 +247,50 @@
     {x:20,y:75},{x:65,y:80},{x:88,y:68},{x:10,y:30},{x:45,y:15},
   ];
   let dotTimers = [], scanAnim = null;
+  const TEXTOS = {
+    pt: { overline: 'Recuperação de Veículos', titulo: 'Solicitar mapa<br>de rastreio',
+          descricao: 'Informe a placa da moto para gerar o arquivo KML com os pontos de localização.',
+          label: 'Placa do veículo', erro: 'Placa incompleta. Ex: UAX-2F98 ou 3689H5', gerar: 'Gerar mapa',
+          gerando: 'Gerando mapa...', placa: 'Placa: ', placeholder: 'Ex: UAX-2F98 ou 3689H5' },
+    es: { overline: 'Recuperación de Vehículos', titulo: 'Solicitar mapa<br>de rastreo',
+          descricao: 'Ingresa la placa de la moto para generar el archivo KML con los puntos de ubicación.',
+          label: 'Placa del vehículo', erro: 'Placa incompleta. Ej: 3689H5 o UAX-2F98', gerar: 'Generar mapa',
+          gerando: 'Generando mapa...', placa: 'Placa: ', placeholder: 'Ej: 3689H5 o UAX-2F98' }
+  };
+  let idioma = 'pt', idiomaManual = false;
+  function aplicarIdioma(novo) {
+    idioma = novo;
+    const t = TEXTOS[idioma];
+    document.documentElement.lang = idioma === 'es' ? 'es' : 'pt-BR';
+    document.querySelectorAll('[data-i18n]').forEach(function (el) { el.textContent = t[el.dataset.i18n]; });
+    document.querySelectorAll('[data-i18n-html]').forEach(function (el) { el.innerHTML = t[el.dataset.i18nHtml]; });
+    document.getElementById('placa').placeholder = t.placeholder;
+    document.querySelectorAll('.lang-toggle button').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.lang === idioma));
+    });
+  }
+  document.querySelectorAll('.lang-toggle button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      idiomaManual = true;
+      try { localStorage.setItem('mymaps_idioma', b.dataset.lang); } catch (err) {}
+      aplicarIdioma(b.dataset.lang);
+    });
+  });
+  try {
+    const salvo = localStorage.getItem('mymaps_idioma');
+    if (salvo === 'es' || salvo === 'pt') { idiomaManual = true; aplicarIdioma(salvo); }
+  } catch (err) {}
+  function idiomaPelaPlaca(v) {
+    if (idiomaManual || !v) return;
+    const sugerido = /^[0-9]/.test(v) ? 'es' : 'pt';
+    if (sugerido !== idioma) aplicarIdioma(sugerido);
+  }
   document.getElementById('placa').addEventListener('input', function (e) {
     let v = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (/^[0-9]/.test(v)) v = v.slice(0, 7);
     else if (v.length > 3) v = v.slice(0, 3) + '-' + v.slice(3);
     e.target.value = v;
+    idiomaPelaPlaca(v);
     validatePlate(false);
   });
   function validatePlate(showMsg) {
@@ -279,7 +326,7 @@
     e.preventDefault();
     const placa = document.getElementById('placa').value.trim().toUpperCase();
     if (!validatePlate(true)) return;
-    const kmlUrl = WEBHOOK_BASE + '?Placa=' + encodeURIComponent(placa);
+    const kmlUrl = WEBHOOK_BASE + '?Placa=' + encodeURIComponent(placa) + '&idioma=' + idioma;
     showLoading(placa);
     scheduleRedirect(kmlUrl, 100);
   });
@@ -329,7 +376,7 @@
   }
   function showLoading(placa) {
     hideAll();
-    document.getElementById('loadingPlaca').textContent = 'Placa: ' + placa;
+    document.getElementById('loadingPlaca').textContent = TEXTOS[idioma].placa + placa;
     showCard('loadingCard');
     startMapAnimation();
     if (window._startMotoAnim) window._startMotoAnim();
@@ -362,6 +409,7 @@
     if (/^[0-9]/.test(placa)) placa = placa.slice(0, 7);
     else if (placa.length > 3) placa = placa.slice(0, 3) + '-' + placa.slice(3);
     document.getElementById('placa').value = placa;
+    idiomaPelaPlaca(placa);
     validatePlate(false);
   });
 })();
